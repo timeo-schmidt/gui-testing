@@ -1,3 +1,5 @@
-*.mp4
+*screenshots*
 apps/
 other_studies/
+*.pyc
+notes.txt
