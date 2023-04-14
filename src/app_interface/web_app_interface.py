@@ -1,5 +1,6 @@
 from .abstract import AbstractAppInterface
-from preambles.preambles import inject_preamble
+from overrides.preambles import inject_preamble
+from overrides.deadends import recover_deadend
 import random
 import time
 import os
@@ -148,8 +149,8 @@ class WebAppInterface(AbstractAppInterface):
         self._print(x,y)
         if self.verbose:
             self._print(f"Clicking at {x}, {y}")
-        action_start_time = time.time()
         self.move_mouse(x, y)
+        action_start_time = time.time()
         ActionChains(self.browser).click().perform()
         self.action_history.append(self.MouseClick(action_start_time, x, y))
 
@@ -173,12 +174,18 @@ class WebAppInterface(AbstractAppInterface):
         return self.browser.page_source
     
     """
+    This function recovers from any known deadend states by manually injecting the actions to recover from the deadend
+    """
+    def fix_deadends(self):
+        recover_deadend(self)
+
+    """
     This function returns the screenshot of the browser window.
     It uses the mss library to capture the screenshot of the browser window efficiently.
     The screenshot is taken by using the window location and the viewport size to calculate the correct area to capture.
     Therefore it is important not to move or resize the browser window during the screen recording.
     """
-    def get_screenshot(self):
+    def get_screenshot(self, size=None):
         with mss() as sct:
             monitor = {
                 "top": self.window_location["y"] + (self.window_location["height"] - self.viewport_size["height"]),
@@ -191,6 +198,11 @@ class WebAppInterface(AbstractAppInterface):
             sct_img = sct.grab(monitor)
             # Convert it to an Image object using Image.frombuffer()
             image = Image.frombuffer("RGB", sct_img.size, sct_img.rgb, "raw", "RGB", 0, 1)
+
+            # Resize the image if a size is specified
+            if size is not None:
+                image = image.resize(size)
+            
             return image
     
 

@@ -63,6 +63,13 @@ class AbstractAppInterface(ABC):
         pass
 
     """
+    Tries to fix deadends in the app by injecting actions manually
+    """
+    @abstractmethod
+    def fix_deadends(self):
+        pass
+
+    """
     Returns a screenshot of the app window as a PIL image
     """
     @abstractmethod

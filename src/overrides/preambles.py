@@ -54,10 +54,9 @@ class RWAPreamble:
             self.web_app_interface.browser.add_cookie(cookie)
     
     def _inject_actions(self):
-        time.sleep(1)
         # Navigate to the /signup page
         self.web_app_interface.browser.get("http://localhost:3000/signup")
-        time.sleep(2)
+        time.sleep(0.5)
         # Into the input field with #firstName enter "Bob"
         self.web_app_interface.browser.find_element(By.ID, "firstName").send_keys("Bob")
         # Into the input field with #lastName enter "Smith"
@@ -79,7 +78,7 @@ class RWAPreamble:
         # Into the input field with #password enter "password" and press enter
         self.web_app_interface.browser.find_element(By.ID, "password").send_keys("password")
         self.web_app_interface.browser.find_element(By.ID, "password").send_keys(Keys.ENTER)
-        time.sleep(1)
+        time.sleep(0.5)
     
     def inject(self):
         self._inject_cookies()
