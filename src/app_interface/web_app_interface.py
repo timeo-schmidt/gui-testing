@@ -1,4 +1,5 @@
 from .abstract import AbstractAppInterface
+from preambles.preambles import inject_preamble
 import random
 import time
 import os
@@ -27,7 +28,7 @@ class WebAppInterface(AbstractAppInterface):
         verbose: Whether to print out the actions being performed
     """
 
-    def __init__(self, screen_size=(1920, 1080), artifact_path="./screenshots", starting_url="https://youtube.de", detached=True, verbose=True):
+    def __init__(self, screen_size=(1920, 1080), artifact_path="./screenshots", starting_url="https://www.youtube.com/", detached=True, verbose=True):
         # Options passed to browser
         options = webdriver.ChromeOptions()
         options.add_argument("window-size=" + str(screen_size[0]) + "," + str(screen_size[1]))
@@ -38,6 +39,7 @@ class WebAppInterface(AbstractAppInterface):
         self.browser = webdriver.Chrome(ChromeDriverManager().install(), options=options)
         # Call the base url
         self.browser.get(starting_url)
+        self.starting_url = starting_url
 
         # Check if the artifact path exists, if not create it
         if not os.path.exists(artifact_path):
@@ -54,6 +56,9 @@ class WebAppInterface(AbstractAppInterface):
 
         # Based on the get_window_size, get the actual viewport location on the screen
         self.viewport_size = self.get_window_size()
+
+        # Inject the preamble
+        inject_preamble(self)
 
     """
     Adding the data classess for the different action types with their respective parameters
@@ -284,6 +289,6 @@ class WebAppInterface(AbstractAppInterface):
         self.slide(100, 100, 100, 400)
         # print(self.get_gui_state())
         self.save_screenshot("test.png")
-        # print(self.get_action_history())
+        print(self.get_action_history())
         self.stop_recording()
         time.sleep(1)
