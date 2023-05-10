@@ -56,10 +56,10 @@ class AbstractAppInterface(ABC):
     # Get App State and interaction history
 
     """
-    Returns information about the current state of the app as a dictionary
+    Returns a list of all the GUI elements
     """
     @abstractmethod
-    def get_gui_state(self):
+    def get_all_elements(self):
         pass
 
     """

@@ -9,6 +9,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.actions.action_builder import ActionBuilder
+from selenium.webdriver.common.by import By
 
 import numpy as np
 import cv2
@@ -61,6 +62,9 @@ class WebAppInterface(AbstractAppInterface):
 
         # Based on the get_window_size, get the actual viewport location on the screen
         self.viewport_size = self.get_window_size()
+
+        # Get the window handle (original tab
+        self.original_tab_handle = self.browser.current_window_handle
 
         # Inject the preamble
         inject_preamble(self)
@@ -168,16 +172,17 @@ class WebAppInterface(AbstractAppInterface):
         self.action_history.append(self.MouseSlide(action_start_time, x, y, x2, y2))
 
     """
-    This function returns the current state of the browser window as a string, which contains the html code of the page
+    This function returns the current state of the browser window, which is a list of all the WebElements
     """
-    def get_gui_state(self):
-        return self.browser.page_source
-    
+    def get_all_elements(self):
+        # Get all the elements on the page
+        return self.browser.find_elements(By.XPATH, "//*")
+
     """
-    This function recovers from any known deadend states by manually injecting the actions to recover from the deadend
+    This function recovers from any known deadend states by first checking for a deadend and then manually injecting the actions to recover from the deadend.
     """
     def fix_deadends(self):
-        recover_deadend(self)
+        return recover_deadend(self)
 
     """
     This function returns the screenshot of the browser window.
@@ -205,7 +210,6 @@ class WebAppInterface(AbstractAppInterface):
             
             return image
     
-
     """
     This function saves the screenshot to the artifact path
     """
@@ -295,16 +299,11 @@ class WebAppInterface(AbstractAppInterface):
     """
     def _test(self):
         print(self.get_app_type() == "web")
-        print(self.get_window_size())
-        self.start_recording()
-        self.click(100, 100)
-        self.click(200, 200)
-        self.click(300, 300)
-        time.sleep(3)
-        self.slide(100, 100, 200, 200)
-        self.slide(100, 100, 100, 400)
-        # print(self.get_gui_state())
-        self.save_screenshot("test.png")
-        print(self.get_action_history())
-        self.stop_recording()
-        time.sleep(1)
+        # time.sleep(3)
+        # self.slide(100, 100, 200, 200)
+        # self.slide(100, 100, 100, 400)
+        # # print(self.get_gui_state())
+        # self.save_screenshot("test.png")
+        # print(self.get_action_history())
+        # self.stop_recording()
+        # time.sleep(1)

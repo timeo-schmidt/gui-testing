@@ -5,8 +5,36 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision.transforms import ToTensor
 from collections import deque
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 from .abstract import AbstractExplorationAlgorithm
+from dataclasses import dataclass
+
+"""
+Agent Action Classes
+"""
+class AgentClick:
+    def __init__(self, agent, x=None, y=None):
+        self.agent = agent
+        self.screen_size = agent.app_interface.get_window_size()
+        if x is None or y is None:
+            self.x = random.randint(0, self.screen_size["width"])
+            self.y = random.randint(0, self.screen_size["height"])
+            self.is_random = True
+        else:
+            self.x = int(x*self.screen_size["width"])
+            self.y = int(y*self.screen_size["height"])
+            self.is_random = False
+    def perform_action(self):
+        self.agent.app_interface.click(self.x, self.y)
+    def get_action_string(self):
+        # X, Y and Random
+        return f"Click: {self.x}, {self.y} (Random: {self.is_random})"
+    def get_action_index(self):
+        return 0
+
 
 """
 CNN class that takes in the input shape and number of actions
@@ -110,14 +138,15 @@ class VisualRL(AbstractExplorationAlgorithm):
                  app_interface,
                  num_actions=1,
                  action_parameters=[2],
-                 batch_size=1,
+                 terminal_state_penalty=-1,
+                 batch_size=32,
                  buffer_size=100000,
                  gamma=0.99,
                  epsilon_start=1.0,
                  epsilon_end=0.01,
-                 epsilon_decay=0.9999,
+                 epsilon_decay=0.997,
                  target_update_freq=1000,
-                 learning_rate=0.00025,
+                 learning_rate=0.0025,
                  downscale_size=(256, 256),
                  device=None):
         if device is None:
@@ -144,6 +173,9 @@ class VisualRL(AbstractExplorationAlgorithm):
         self.num_actions = num_actions
         self.action_parameters = action_parameters
 
+        self.unique_visible_elements = set()
+        self.terminal_state_penalty = terminal_state_penalty
+
         input_shape = (3, self.downscale_size[0], self.downscale_size[1])
         self.policy_net = CNN(input_shape, num_actions, action_parameters).to(self.device)
         self.target_net = CNN(input_shape, num_actions, action_parameters).to(self.device)
@@ -152,99 +184,155 @@ class VisualRL(AbstractExplorationAlgorithm):
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
         self.loss_fn = nn.SmoothL1Loss() 
 
+        self.loss_history = []
+
+
+    def plot_click_locations(self):
+        click_x = []
+        click_y = []
+        click_color = []
+
+        for transition in self.buffer:
+            _, action, _, _, _ = transition
+            if isinstance(action, AgentClick):
+                click_x.append(action.x)
+                click_y.append(action.y)
+                click_color.append("blue" if action.is_random else "red")
+
+        plt.figure(figsize=(12, 8))
+        sns.scatterplot(x=click_x, y=click_y, hue=click_color, palette=["red", "blue"])
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.title("Click Locations (Blue: Random, Red: Model-Selected)")
+        plt.gca().invert_yaxis()  # Invert the y-axis to match the coordinate system used by app_interface
+        plt.savefig("click_locations.png")
+
 
     def explore(self, num_steps):
+
+        # Calculate the reward once at the beginning, to initialize the unique_visible_elements set
+        _, elements = self.get_state()
+        self.calculate_reward(elements)
+
         step_count = 0
 
         while step_count < num_steps:
-            state = self.get_state()
-            action, action_params = self.select_action(state)
-            # Execute action
-            self.perform_action(action, action_params)
+            screenshot, elements = self.get_state()
+            action = self.select_action(screenshot)
+            action.perform_action()
 
             # Observe reward and next state
-            next_state = self.get_state()
-            reward, is_terminal = self.calculate_reward(state, next_state)
+            next_screenshot, next_elements = self.get_state()
+            reward = self.calculate_reward(next_elements)
+
+            print("Epoch: {}, Reward: {}, Action: {}, Epsilon: {}".format(step_count, reward, action.get_action_string(), self.epsilon))
+
+            # If the reward is -1, then the agent has reached a terminal state
+            terminal_state = not bool(reward)
 
             # Store transition in replay buffer
-            self.buffer.append((state, action, reward, next_state, is_terminal))
+            self.buffer.append((screenshot, action, reward, next_screenshot, terminal_state))
 
             if len(self.buffer) >= self.batch_size:
                 self.optimize_model()
 
-            state = next_state
             step_count += 1
 
             # Update the target network
             if step_count % self.target_update_freq == 0:
-                self.target_net.load_state_dict(self.policy_net.state_dict())
+                self.target_net.load_state_dict(self.policy_net.state_dict()) 
+        
+        # After the exploration is finished, produce a plot of all the clicks
+        self.plot_click_locations()
 
     def get_state(self):
-        screenshot = self.app_interface.get_screenshot(size=self.downscale_size)
-        state = ToTensor()(screenshot).unsqueeze(0).to(self.device)
-        return state
+        elements = self.app_interface.get_all_elements()
 
-    def select_action(self, state):
-        print("Epsilon: {}".format(self.epsilon))
-        print(np.random.rand())
+        screenshot = self.app_interface.get_screenshot(size=self.downscale_size)
+        screenshot = ToTensor()(screenshot).unsqueeze(0).to(self.device)
+
+        return screenshot, elements
+
+    def select_action(self, screenshot):
         if np.random.rand() > self.epsilon:
-            print("Selecting action using policy network")
             with torch.no_grad():
-                action_class_output, action_parameter_output = self.policy_net(state)
+                action_class_output, action_parameter_output = self.policy_net(screenshot)
                 action = action_class_output.max(1)[1].view(1, 1).item()
                 action_params = action_parameter_output[action].view(1, -1).tolist()[0]
-                return action, action_params
+                if action == 0:
+                    return AgentClick(self, action_params[0], action_params[1])
         else:
-            print("Selecting random action")
             random_action = random.randrange(self.num_actions)
-            return random_action, None
+            if(random_action==0):
+                return AgentClick(self)
 
-    def perform_action(self, action, action_params):
-        if action == 0:  # Click
-            # Get the x and y coordinates from the action parameters
-            x = action_params[0] if action_params is not None else np.random.rand()
-            x = int(x * self.screen_size["width"])
-            y = action_params[1] if action_params is not None else np.random.rand()
-            y = int(y * self.screen_size["height"])
-            self.app_interface.click(x, y)
+    def filter_visible_web_elements(self, web_element_list):
+        visible_elements = []
+        for element in web_element_list:
+            try:
+                if element.is_displayed():
+                    visible_elements.append(element)
+            except:
+                pass
+        return set(visible_elements)
 
-    def calculate_reward(self, state, next_state):
-        # Calculate the Mean Squared Error (MSE) between the two states
-        mse_loss = nn.MSELoss(reduction='mean')
-        visual_difference = mse_loss(state, next_state).item()
+    def calculate_reward(self, next_elements):
 
-        return visual_difference, False
+        # Inject overrides if a "terminal" state was reached
+        terminal = self.app_interface.fix_deadends()
+        if terminal:
+            return self.terminal_state_penalty # Penalise for reaching a terminal state
+
+        # Get all the new elements that have not been seen previously in self.unique_visible_elements
+        new_elements = set(next_elements) - self.unique_visible_elements
+        # Get the visible elements from the new elements
+        visible_new_elements = self.filter_visible_web_elements(new_elements)
+        # Add the visible new elements to the set of unique visible elements
+        self.unique_visible_elements = self.unique_visible_elements.union(visible_new_elements)
+
+        # The reward is the number of new elements that have been seen
+        reward = len(visible_new_elements)
+        return reward
 
     def optimize_model(self):
+
+        # self.buffer.append((screenshot, action, reward, next_screenshot, terminal_state))
         # Sample a minibatch from the replay buffer
         minibatch = random.sample(self.buffer, self.batch_size)
-        state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = zip(*minibatch)
+        screenshot_batch, action_batch, reward_batch, next_screenshot_batch, terminal_state_batch = zip(*minibatch)
 
-        state_batch = torch.cat(state_batch).to(self.device)
-        action_batch = torch.tensor(action_batch, dtype=torch.long).unsqueeze(1).to(self.device)
+        # Convert the batches to tensors
+        screenshot_batch = torch.cat(screenshot_batch).to(self.device)
+        action_class_batch = torch.tensor([a.get_action_index() for a in action_batch], dtype=torch.int64).unsqueeze(1).to(self.device)
         reward_batch = torch.tensor(reward_batch, dtype=torch.float32).unsqueeze(1).to(self.device)
-        next_state_batch = torch.cat(next_state_batch).to(self.device)
-        terminal_batch = torch.tensor(terminal_batch, dtype=torch.bool).to(self.device)
+        next_screenshot_batch = torch.cat(next_screenshot_batch).to(self.device)
+        terminal_state_batch = torch.tensor(terminal_state_batch, dtype=torch.bool).to(self.device)
 
-        # Compute the action values for the current state using the policy network
-        state_action_values, _ = self.policy_net(state_batch)
-        state_action_values = state_action_values.gather(1, action_batch)
+        # Compute Q values for the current state-action pairs
+        q_values, _ = self.policy_net(screenshot_batch)
+        q_values = q_values.gather(1, action_class_batch)
 
-        # Compute the action values for the next state using the target network
+        # Compute the target Q values for the next states using the target network
         with torch.no_grad():
-            next_state_values, _ = self.target_net(next_state_batch)
-            next_state_actions = next_state_values.max(1, keepdim=True)[1]
-            next_state_values = self.policy_net(next_state_batch)[0].gather(1, next_state_actions)
-            next_state_values[terminal_batch] = 0.0
-            target_values = reward_batch + self.gamma * next_state_values
+            next_q_values, _ = self.target_net(next_screenshot_batch)
+            next_q_values_max = next_q_values.max(1)[0].unsqueeze(1)
+            next_q_values_max[terminal_state_batch] = 0.0  # Set Q values to 0 for terminal states
+            target_q_values = reward_batch + self.gamma * next_q_values_max
 
-        # Compute the loss
-        loss = self.loss_fn(state_action_values, target_values)
-
-        # Perform the optimization step
+        # Compute the loss and optimize the policy network
+        loss = self.loss_fn(q_values, target_q_values)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # Update the epsilon value for epsilon-greedy exploration
-        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+        # Store the loss
+        self.loss_history.append(loss.item())
+        # Plot the loss curve
+        plt.plot(self.loss_history)
+        plt.savefig("loss.png")
+        plt.close()
+        # Print loss and current progress information
+        print("Minibatch Backpropagation Loss: {}".format(loss.item()))
+
+        # Decay epsilon for epsilon-greedy exploration
+        self.epsilon = max(self.epsilon_end, self.epsilon_decay * self.epsilon)
