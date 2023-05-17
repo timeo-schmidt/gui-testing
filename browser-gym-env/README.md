@@ -1,0 +1,1 @@
+This is the python package that implements the browser-based gymnasium environment.

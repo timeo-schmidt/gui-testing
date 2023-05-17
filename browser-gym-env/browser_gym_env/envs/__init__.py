@@ -1,0 +1,1 @@
+from browser_gym_env.envs.web_browser_env import WebBrowserEnv
