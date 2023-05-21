@@ -5,7 +5,6 @@
 
 WORK LOG:
 
-10th of May
 - Implementing location click points
 - Improving Visual_RL Design
 - Fixing bugs in training
@@ -13,19 +12,22 @@ WORK LOG:
 - Reading about methods for continous action space (Actor-Critic, PPO, Policy Gradient)
 - Going back to the Eskonen et al paper. Finding out that they use A3C, which poses implementation challenges with 7 simultaneous browser windows open.
 
-11th of May
 - Reading more about Actor-Critic and PPO
 - Installing and trying out CleanRL library
 - Finding out about "Gym/Gymnasium" environments and how to implement a custom env
 - Refactoring the repo
 - Begin implementing Gym Environment for Browser
 
-12th of May
 - Continue Gym Environment Development
 - Try to get CleanRL to work (failed)
 - Try to get Stable-Baseline to work (failed)
 - Try to get Stable-Baseline-3 to work (failed)
 - Try to get RayLib to work: Looks promising. Should continue down that route
 
-13th of May
+
 - Test for Raylib Gym Env running through fine, just need to configure the conv net input filter
+
+- Debugging and Learning RayLib
+
+- Parameter Tuning, Environment Tuning
+- First Successful Training Run

@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -32,10 +33,11 @@ class WebBrowserEnv(gym.Env):
         self.max_episode = MAX_EPISODE
 
         # Initialize the WebAppInterface
-        self.web_app_interface = WebAppInterface(screen_size=self.viewport_size, starting_url=self.starting_url, detached=False)
+        self.web_app_interface = WebAppInterface(screen_size=self.viewport_size, starting_url=self.starting_url, detached=False, verbose=False)
 
-        # Store the elements that are visible in the starting state
-        self.unique_visible_elements = set(self.web_app_interface.get_all_elements())
+        # Reset reward
+        self._init_reward()
+
 
     def _get_obs(self):
 
@@ -45,8 +47,11 @@ class WebBrowserEnv(gym.Env):
         # Convert to a numpy array and remove the alpha/transparency channel
         obs = np.asarray(obs)[...,:3]
 
-        # normalise by dividing by 255
+        # Normalize the values to be between 0 and 1
         obs = obs / 255.0
+
+        # Remove any non-finite values
+        obs = np.nan_to_num(obs, copy=False, nan=0.0, posinf=255, neginf=0)
 
         return obs
 
@@ -55,6 +60,10 @@ class WebBrowserEnv(gym.Env):
             "url": self.web_app_interface.browser.current_url,
             "elements": self.web_app_interface.get_all_elements()
         }
+
+
+    def _init_reward(self):
+        self.known_xpaths = set(self._get_visible_paths())
 
     def reset(self, *, seed=None, options=None):
         # We need the following line to seed self.np_random
@@ -67,38 +76,80 @@ class WebBrowserEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
-        # Reset the unique visible elements
-        self.unique_visible_elements = set(self.web_app_interface.get_all_elements())
+        # Reset reward
+        self._init_reward()
 
         # if self.render_mode == "human":
         #    self._render_frame()
 
         return observation, info
 
-    def filter_visible_web_elements(self, web_element_list):
-        visible_elements = []
-        for element in web_element_list:
-            try:
-                if element.is_displayed():
-                    visible_elements.append(element)
-            except:
-                pass
-        return set(visible_elements)
+    # def _filter_visible_web_elements(self, web_element_list):
+    #     visible_elements = []
+    #     for element in web_element_list:
+    #         try:
+    #             if element.is_displayed():
+    #                 visible_elements.append(element)
+    #         except:
+    #             pass
+    #     return set(visible_elements)
+    
+    def _get_visible_paths(self):
+        xpaths = self.web_app_interface.browser.execute_script("""
+        function getXPathForElement(element) {
+            const idx = (sib, name) => sib
+                ? idx(sib.previousElementSibling, name || sib.localName) + (sib.localName == name)
+                : 1;
+            const segs = elm => !elm || elm.nodeType !== 1 
+                ? ['']
+                : elm.id && document.getElementById(elm.id) === elm
+                    ? [`id("${elm.id}")`]
+                    : [...segs(elm.parentNode), `${elm.localName.toLowerCase()}`];
+            let path = segs(element);
+            path[path.length - 1] = `${path[path.length - 1]}[${idx(element)}]`;
+            return path.join('/');
+        }
 
+        function isVisible(element) {
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+
+            return style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                parseFloat(style.opacity) > 0 &&
+                rect.width > 0 && rect.height > 0 &&
+                rect.top >= 0 && rect.left >= 0 &&
+                (rect.bottom + window.scrollY) <= (window.innerHeight + window.scrollY) &&
+                (rect.right + window.scrollX) <= (window.innerWidth + window.scrollX);
+        }
+
+        const elements = document.querySelectorAll('*');
+        const visibleElementsXPaths = [];
+
+        for (let element of elements) {
+            if (isVisible(element)) {
+                visibleElementsXPaths.push(getXPathForElement(element));
+            }
+        }
+        return visibleElementsXPaths;
+        """)
+
+        return xpaths
 
     """
     The reward function is equal to the newly discovered visible elements count
     """
     def _calculate_reward(self, is_deadend=False):
-        # Get all the new elements that have not been seen previously in self.unique_visible_elements
-        new_elements = set(self.web_app_interface.get_all_elements()) - self.unique_visible_elements
-        # Get the visible elements from the new elements
-        visible_new_elements = self.filter_visible_web_elements(new_elements)
-        # Add the visible new elements to the set of unique visible elements
-        self.unique_visible_elements = self.unique_visible_elements.union(visible_new_elements)
 
-        # The reward is the number of new elements that have been seen
-        reward = len(visible_new_elements)
+        all_visible_xpaths = set(self._get_visible_paths())
+
+        # Get the new xpaths that have not been seen previously in self.known_xpaths
+        new_xpaths = all_visible_xpaths - self.known_xpaths
+
+        # Add the new xpaths to the known xpaths
+        self.known_xpaths = self.known_xpaths.union(new_xpaths)
+
+        reward = len(new_xpaths)
 
         if (reward == 0):
             reward = -0.01
@@ -106,6 +157,10 @@ class WebBrowserEnv(gym.Env):
             reward = -1
         else:
             reward = np.log(reward+1)*10
+
+        # Clean reward value
+        reward = np.nan_to_num(reward, copy=False, nan=0.0, posinf=0, neginf=0)
+        reward = np.clip(reward, -1, 30)
         
         return reward
 

@@ -17,8 +17,11 @@ import cv2
 import random
 
 import string
+from io import BytesIO
+
 
 from mss import mss
+import threading
 from dataclasses import dataclass
 
 CHROMEDRIVER_EXEC = "/Users/timeoschmidt/Desktop/ICL/4th_Year/FYP/gui-testing/browser-gym-env/browser_gym_env/envs/web_app_interface/chromedriver/chromedriver"
@@ -87,7 +90,7 @@ class WebAppInterface(AbstractAppInterface):
         # Inject the preamble
         inject_preamble(self)
 
-        time.sleep(5)
+        time.sleep(1)
 
     """
     Adding the data classess for the different action types with their respective parameters
@@ -226,15 +229,11 @@ class WebAppInterface(AbstractAppInterface):
                 image = Image.frombuffer("RGB", sct_img.size, sct_img.rgb, "raw", "RGB", 0, 1)
         
         else:
-            # Generate a short random string to use as a filename
-            filename = ''.join(random.choices(string.ascii_lowercase, k=8))+".png"
-            # Save the screenshot to the artifact path
-            self.browser.save_screenshot(filename)
-            # Open the screenshot using PIL
-            image = Image.open(filename)
-            # Delete the screenshot
-            os.remove(os.path.join(filename))
-        
+            # Get the screenshot as a bytes object
+            screenshot = self.browser.get_screenshot_as_png()
+            # Convert the screenshot to a PIL image
+            image = Image.open(BytesIO(screenshot))
+                    
         # Resize the image if a size is specified
         if size is not None:
             image = image.resize(size)
