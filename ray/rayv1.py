@@ -12,7 +12,8 @@ from browser_gym_env.envs.web_browser_env import WebBrowserEnv
 ray.init()
 
 config = (
-    A2CConfig()
+    SACConfig()
+    .training(replay_buffer_config={"capacity": 5000})
     .environment(WebBrowserEnv)
     .rollouts(num_rollout_workers=0, num_envs_per_worker=5)
     .resources(num_gpus=0)
