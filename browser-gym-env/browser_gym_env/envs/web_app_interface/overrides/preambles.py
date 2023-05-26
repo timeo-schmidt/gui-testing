@@ -81,12 +81,18 @@ class RWAPreamble:
         time.sleep(0.5)
     
     def inject(self):
-        self._inject_cookies()
-        if self.web_app_interface.verbose:
-            print("Injected cookies for ", self.web_app_interface.starting_url)
-        self._inject_actions()
-        if self.web_app_interface.verbose:
-            print("Injected actions for ", self.web_app_interface.starting_url)
+        while True:
+            try:
+                self._inject_cookies()
+                if self.web_app_interface.verbose:
+                    print("Injected cookies for ", self.web_app_interface.starting_url)
+                self._inject_actions()
+                if self.web_app_interface.verbose:
+                    print("Injected actions for ", self.web_app_interface.starting_url)
+                break
+            except:
+                print("Failed to inject cookies and actions. Retrying in 5 seconds...")
+                time.sleep(5)
 
 
 """

@@ -87,6 +87,8 @@ class WebAppInterface(AbstractAppInterface):
         # Get the window handle (original tab
         self.original_tab_handle = self.browser.current_window_handle
 
+        time.sleep(3)
+
         # Inject the preamble
         inject_preamble(self)
 
