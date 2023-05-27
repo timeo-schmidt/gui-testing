@@ -41,12 +41,14 @@ class MaskedSquashedDiagGaussianDistribution(SquashedDiagGaussianDistribution):
     # def sample(self) -> th.Tensor:
     #     # Reparametrization trick to pass gradients
     #     self.gaussian_actions = super().sample()
+
+    #     # For each action, draw 1000 samples from the normal distribution
         
     #     screen_size = th.tensor(self.mask.shape[2:]).to(self.gaussian_actions.device)
     #     zero_tensor = th.tensor([0,0]).to(self.gaussian_actions.device).type(th.long)
 
     #     # If the mask is active, ensure that the sampling is according to the mask
-    #     if self.mask is not None) and self.mask_valid:
+    #     if self.mask is not None and self.mask_valid:
     #         for i, a in enumerate(self.gaussian_actions):
     #             # Check if the action is valid
     #             # Convert the action to the screen click coordinates
@@ -68,7 +70,7 @@ class MaskedSquashedDiagGaussianDistribution(SquashedDiagGaussianDistribution):
     def masked_actions_from_params(self, mean_actions: th.Tensor, log_std: th.Tensor, mask: th.Tensor, deterministic: bool = False) -> th.Tensor:
         self.mask = mask
         # Check that the mask does have at least 10% of clickable values
-        self.mask_valid = False
+        self.mask_valid = True
         # Sample actions from the normal distribution
         afp =  super().actions_from_params(mean_actions, log_std, deterministic=deterministic)
         self.mask_valid = False
@@ -136,10 +138,44 @@ class MaskedActor(Actor):
     
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs)
-        # Note: the action is squashed
-        mask = obs["clickable_elements"]
-        x =  self.action_dist.masked_actions_from_params(mean_actions, log_std, mask, deterministic=deterministic, **kwargs)
-        return x
+        x =  self.action_dist.actions_from_params(mean_actions, log_std, deterministic=deterministic, **kwargs)
+
+        # Get the shape of the mask
+        mask = obs["clickable_elements"][:, -1, :, :] # Keep the most recent frame only for action masking
+
+        # Create a copy of x
+        masked_actions = x.clone()
+
+        # Iterate through the batch
+        for i in range(x.shape[0]):
+            # Get all the valid actions
+            indices = th.nonzero(mask[i] == 255)
+
+            # If there are no valid actions, just use the original action
+            if(indices.shape[0] == 0):
+                continue
+
+            indices = indices.float()
+            # Normalize the 2nd element (height)
+            indices[:,0] = (indices[:,0] / (mask[1].shape[0] - 1)) * 2 - 1
+            # Normalize the 3rd element (width)
+            indices[:,1] = (indices[:,1] / (mask[1].shape[1] - 1)) * 2 - 1
+
+            obs_dist = SquashedDiagGaussianDistribution(action_dim=2)
+            obs_dist.proba_distribution(mean_actions[i], log_std[i])
+
+            # compute log probabilities of the positions
+            log_probs = obs_dist.log_prob(indices)
+
+            # to get actual probabilities, you can exponentiate the log probabilities
+            probs = th.exp(log_probs)
+
+            action_index = th.multinomial(probs, num_samples=1)
+
+            # Set the masked_actions
+            masked_actions[i] = indices[action_index]
+
+        return masked_actions
 
 
 

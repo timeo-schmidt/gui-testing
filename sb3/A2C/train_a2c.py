@@ -1,6 +1,5 @@
 # Algorithm imports
-from stable_baselines3 import SAC
-from custom_sac_policy import MaskedSACPolicy
+from stable_baselines3 import A2C
 
 # Environment imports
 import browser_gym_env
@@ -11,31 +10,29 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Experiment parameters
-EXPERIMENT_NAME = "sac_masked"
+EXPERIMENT_NAME = "a2c_vanilla"
 MODEL_SAVE_PATH = "./models/"
 N_ENVS = 10
-MAX_BUFFER_SIZE = 10000
 
 # Prepare environment
 env = make_vec_env(
     "browser_gym_env/WebBrowserEnv-v0", 
     n_envs=N_ENVS, 
     vec_env_cls=SubprocVecEnv, 
-    env_kwargs={"masking": True, "log_steps": True},
+    env_kwargs={"masking": False, "log_steps": True},
     vec_env_kwargs=dict(start_method='fork')
 )
 
 env = VecFrameStack(env, n_stack=4)
 
 # Prepare model
-model = SAC(
-    MaskedSACPolicy, 
+model = A2C(
+    "CnnPolicy", 
     env,
     verbose=1, 
     device="mps", 
     tensorboard_log="./tensorboard/",
-    seed=0,
-    # buffer_size=MAX_BUFFER_SIZE,
+    learning_rate=0.00005
 )
 
 # Train the model and save checkpoints
@@ -51,5 +48,5 @@ model.learn(
     total_timesteps=100000, 
     log_interval=4, 
     tb_log_name=EXPERIMENT_NAME, 
-    #callback=checkpoint_callback
+    callback=checkpoint_callback
 )

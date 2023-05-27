@@ -14,24 +14,27 @@ from browser_gym_env.envs.web_app_interface.web_app_interface import WebAppInter
 VIEWPORT_SIZE = (1080, 720)                 # The size of the browser window in pixels as a tuple: (width, height)
 DOWNSCALE_SIZE = (128, 128)                 # The size of the downsampled screenshot in pixels as a tuple: (width, height)
 STARTING_URL = "http://localhost:3000/"     # The URL to load when the environment is reset
-MAX_EPISODE = 20                            # The maximum number of steps in an episode
+MAX_EPISODE = 20                            # The maximum number of steps in an episode (aka Horizon)
+BROWSER_RESET_INTERVAL = 1000               # The number of steps after which the browser is re-launched to free up memory
+DISCRETISED_ACTION_SPACE_SIZE = (128, 128)
 
 class WebBrowserEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, render_mode=None, masking=False, log_steps=True):
+    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True):
         self.viewport_size = VIEWPORT_SIZE
         self.downscale_size = DOWNSCALE_SIZE
         self.starting_url = STARTING_URL
         
         self.masking = masking
+        self.reward_clickable = reward_clickable
         self.log_steps = log_steps
 
         # Depending on the masking flag, the observation space is either only the screenshot or a dictionary of the screenshot and mask
         if self.masking:
             self.observation_space = spaces.Dict({
                 "screenshot": spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], 3), dtype=np.uint8),
-                "clickable_elements": spaces.Box(low=0, high=255, shape=(VIEWPORT_SIZE[1], VIEWPORT_SIZE[0], 1), dtype=np.uint8)
+                "clickable_elements": spaces.Box(low=0, high=255, shape=(DISCRETISED_ACTION_SPACE_SIZE[1], DISCRETISED_ACTION_SPACE_SIZE[0], 1), dtype=np.uint8)
             })
         else:
             self.observation_space = spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], 3), dtype=np.uint8)
@@ -46,7 +49,8 @@ class WebBrowserEnv(gym.Env):
         self.max_episode = MAX_EPISODE
 
         # Initialize the WebAppInterface
-        self.web_app_interface = WebAppInterface(screen_size=self.viewport_size, starting_url=self.starting_url, detached=False, verbose=False)
+        self.web_app_interface = None
+        self._init_browser()
 
         # Calculate and store the inner window size through JS call
         self.inner_window_size = self.web_app_interface.browser.execute_script("return { width: window.innerWidth, height: window.innerHeight }")
@@ -59,12 +63,22 @@ class WebBrowserEnv(gym.Env):
         self.env_id = ''.join(random.choice(string.ascii_lowercase) for i in range(5))
         self.prev_obs = None
 
-
+    """
+    This function is called at the start and periodically to re-launch the browsers and free up accumulated memory.
+    """
+    def _init_browser(self):
+        # Close the browser if it is already open
+        if self.web_app_interface is not None:
+            self.web_app_interface.browser.close()
+        time.sleep(3)
+        self.web_app_interface = WebAppInterface(screen_size=self.viewport_size, starting_url=self.starting_url, detached=False, verbose=False)
+        self.browser_open_steps = 0
+        time.sleep(10)
 
     """
-    This function retrieves a mask with all the interactable elements in the current page.
+    This function gets a dict with the topLeft and bottomRight coordinates of the interactable elements in the current page.
     """
-    def draw_interactable_regions(self):
+    def get_interactable_regions_dict(self):
         expression = """
         function getElementsPositions() {
             var allElements = document.querySelectorAll('*');
@@ -121,6 +135,17 @@ class WebBrowserEnv(gym.Env):
         # Now use normal js to return the clickable elements
         interactable_elements = self.web_app_interface.browser.execute_script("return interactable_elements;")
 
+        return interactable_elements
+        
+
+    """
+    This function retrieves an (image) mask with all the interactable elements in the current page.
+    """
+    def get_interactable_element_mask(self):
+
+        # Get the interactable elements
+        interactable_elements = self.get_interactable_regions_dict()
+
         # Initialize the mask tensor with zeroes
         tensor = np.zeros((VIEWPORT_SIZE[1], VIEWPORT_SIZE[0], 1), dtype=np.uint8)
 
@@ -149,6 +174,14 @@ class WebBrowserEnv(gym.Env):
             # Update the tensor 
             tensor[topLeft['y']:bottomRight['y'], topLeft['x']:bottomRight['x']] = 255
             
+        if VIEWPORT_SIZE != DISCRETISED_ACTION_SPACE_SIZE:
+            # Resize the tensor to the downscale size with pillow
+            tensor = tensor.squeeze().astype(np.uint8)
+            tensor = Image.fromarray(tensor, mode='L')
+            tensor = tensor.resize(DISCRETISED_ACTION_SPACE_SIZE, resample=Image.BILINEAR)
+            tensor = np.asarray(tensor)
+            tensor = tensor.reshape(tensor.shape[0], tensor.shape[1], 1)
+
         return tensor
 
     """
@@ -162,8 +195,8 @@ class WebBrowserEnv(gym.Env):
         # Convert to a numpy array and remove the alpha/transparency channel
         screenshot = np.asarray(screenshot)[...,:3]
 
-        if self.masking:
-            mask = self.draw_interactable_regions()
+        # if self.masking:
+        #     mask = self.get_interactable_regions_dict()
 
         # # Normalize the values to be between 0 and 1
         # obs = obs / 255.0
@@ -171,13 +204,13 @@ class WebBrowserEnv(gym.Env):
         # # Remove any non-finite values
         # obs = np.nan_to_num(obs, copy=False, nan=0.0, posinf=1.0, neginf=0)
 
-        # as a dummy, create a random clickable elements array with dtyp uint8
-        # Create an array where the top half is 0 and the bottom half is 255 with dtype uint8
+        # # as a dummy, create a random clickable elements array with dtyp uint8
+        # # Create an array where the top half is 0 and the bottom half is 255 with dtype uint8
         # clickable_elements = np.zeros((VIEWPORT_SIZE[1], VIEWPORT_SIZE[0], 1), dtype=np.uint8)
         # clickable_elements[700:,700:] = 255
 
-        # Get the screenshot and mask of the previous observation
-        # Make sure the data types are uint8
+        # # Get the screenshot and mask of the previous observation
+        # # Make sure the data types are uint8
         # ss = screenshot.astype(np.uint8)
         # mask = mask.astype(np.uint8)
 
@@ -192,12 +225,12 @@ class WebBrowserEnv(gym.Env):
         # screenshot_img.putalpha(mask_img)
 
         # # Save the image with env id and random number
-        # screenshot_img.save(f"{self.env_id}_{random.randint(0, 100000)}.png")
+        # screenshot_img.save(f"{self.env_id}_.png")
 
         if self.masking:
             obs = { 
                 "screenshot": screenshot,
-                "clickable_elements": self.draw_interactable_regions()
+                "clickable_elements": self.get_interactable_element_mask()
             }
         else:
             obs = screenshot
@@ -280,7 +313,7 @@ class WebBrowserEnv(gym.Env):
     """
     The reward function for the environment.
     """
-    def _calculate_reward(self, is_deadend=False):
+    def _calculate_reward(self, actions, is_deadend=False):
 
         all_visible_xpaths = set(self._get_visible_paths())
 
@@ -293,13 +326,31 @@ class WebBrowserEnv(gym.Env):
         reward = len(new_xpaths)
 
         if (reward == 0):
-            reward = -0.1
+            # Check wether the action occured at a clickable location and at least give some reward
+            if self.reward_clickable:
+                mask = self.get_interactable_element_mask()
+                mask = mask.squeeze()
+                actions[0] = np.minimum(actions[0], mask.shape[1]-1)
+                actions[1] = np.minimum(actions[1], mask.shape[0]-1)
+                reward = 0.5*int(mask[actions[1], actions[0]] == 0)
+            else:
+                reward = -0.5
         elif is_deadend:
-            reward = -1.0
+            reward = -10
         else:
             reward = np.log(reward+1.0)*10.0
         
         return reward
+    
+    """
+    Check that the observation is not just a white image or an image with no clickable elements.
+    """
+    def _check_obs_valid(self, obs):
+        if self.masking:
+            return not np.all(obs["screenshot"] == 255) and not np.all(obs["clickable_elements"] == 0)
+        else:
+            return not np.all(obs == 255)
+       
 
     """
     One time step in the environment.
@@ -313,21 +364,27 @@ class WebBrowserEnv(gym.Env):
         # Perform the mouse click
         self.web_app_interface.click(x, y)
 
+        # Calcualte a new observation and info
+        observation = self._get_obs()
+        info = self._get_info()
+
+        # Check wether the observation is valid
+        is_obs_valid = self._check_obs_valid(observation)
+
+        if not is_obs_valid:
+            print("Invalid observation")
+
         # After every click, check that the page has not become a deadend
         is_deadend = bool(self.web_app_interface.fix_deadends())
 
         # If the page is a deadend, then truncate the episode
-        truncated = is_deadend
+        truncated = is_deadend or not is_obs_valid
 
         # An episode is done if the max episode step count is reached or the page is a deadend
         terminated = self.episode_step_count >= self.max_episode or is_deadend
 
         # Compute the reward
-        reward = self._calculate_reward(is_deadend)
-
-        # Calcualte a new observation and info
-        observation = self._get_obs()
-        info = self._get_info()
+        reward = self._calculate_reward([x,y], is_deadend)
 
         if not terminated:
             self.episode_step_count += 1
@@ -370,6 +427,11 @@ class WebBrowserEnv(gym.Env):
         if self.log_steps:
             # Print episode, action, reward all fixed length
             print(f"Episode: {self.episode_step_count:03d} | Action: ({x:04d}, {y:04d}) | Reward: {reward:03f}")
+
+        # Increment browser open steps
+        self.browser_open_steps += 1
+        if(self.browser_open_steps >= BROWSER_RESET_INTERVAL):
+            self._init_browser()
 
         return observation, reward, terminated, truncated, info
 

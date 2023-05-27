@@ -10,10 +10,12 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Experiment parameters
-EXPERIMENT_NAME = "sac_vanilla"
+EXPERIMENT_NAME = "sac_vanilla_100k"
 MODEL_SAVE_PATH = "./models/"
 N_ENVS = 10
-MAX_BUFFER_SIZE = 5000
+MAX_BUFFER_SIZE = None
+USE_CHECKPOINTS = None
+USE_REPLAY_BUFFER = None
 
 # Prepare environment
 env = make_vec_env(
@@ -33,12 +35,20 @@ model = SAC(
     verbose=1, 
     device="mps", 
     tensorboard_log="./tensorboard/",
-    buffer_size=MAX_BUFFER_SIZE
+    #buffer_size=MAX_BUFFER_SIZE
 )
+
+# Load checkpoints
+if USE_CHECKPOINTS:
+    model = SAC.load(USE_CHECKPOINTS, env=env, device="mps")
+
+# Load replay buffer
+if USE_REPLAY_BUFFER:
+    model.load_replay_buffer(USE_REPLAY_BUFFER)
 
 # Train the model and save checkpoints
 checkpoint_callback = CheckpointCallback(
-  save_freq=1000,
+  save_freq=10000,
   save_path=MODEL_SAVE_PATH,
   name_prefix=EXPERIMENT_NAME,
   save_replay_buffer=True,
