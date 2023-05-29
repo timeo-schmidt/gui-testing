@@ -153,13 +153,14 @@ class MaskedActor(Actor):
 
             # If there are no valid actions, just use the original action
             if(indices.shape[0] == 0):
+                print("there are no valid actions!")
                 continue
 
             indices = indices.float()
             # Normalize the 2nd element (height)
-            indices[:,0] = (indices[:,0] / (mask[1].shape[0] - 1)) * 2 - 1
+            indices[:,0] = (indices[:,0] / (mask[i].shape[0] - 1)) * 2 - 1
             # Normalize the 3rd element (width)
-            indices[:,1] = (indices[:,1] / (mask[1].shape[1] - 1)) * 2 - 1
+            indices[:,1] = (indices[:,1] / (mask[i].shape[1] - 1)) * 2 - 1
 
             obs_dist = SquashedDiagGaussianDistribution(action_dim=2)
             obs_dist.proba_distribution(mean_actions[i], log_std[i])
@@ -174,6 +175,35 @@ class MaskedActor(Actor):
 
             # Set the masked_actions
             masked_actions[i] = indices[action_index]
+
+            # Convert arrays to Pillow Images
+            screenshot_img = Image.fromarray(np.transpose(obs["screenshot"][i].detach().cpu().numpy(), (1, 2, 0)), 'RGB')
+            mask_img = Image.fromarray(mask[i].squeeze().cpu().detach().numpy(), 'L')
+
+            # Resize the screenshot to the mask size
+            screenshot_img = screenshot_img.resize(mask_img.size)
+
+            # Now apply the mask to the screenshot
+            screenshot_img.putalpha(mask_img)
+
+            # Now draw a red circle at the click location
+            draw = ImageDraw.Draw(screenshot_img)
+
+            # masked actions e.g. tensor([[-0.9213,  0.0236]], device='mps:0')
+            # mask.shape = 
+            # Scale the click location to the mask size
+            x_scaled = int((masked_actions[i][0]+1) * 0.5 * mask[i].shape[0])
+            y_scaled = int((masked_actions[i][1]+1) * 0.5 * mask[i].shape[1])
+
+            # Check that the click location is within the screenshot image
+            if(x_scaled < 0 or x_scaled >= screenshot_img.size[1] or y_scaled < 0 or y_scaled >= screenshot_img.size[0]):
+                print("click location is out of bounds!")
+                continue
+
+            draw.ellipse((y_scaled-1, x_scaled-1, y_scaled+1, x_scaled+1), fill='red', outline='red')
+
+            # Save the image with the env id as name
+            screenshot_img.save(f"debug_{i}.png")
 
         return masked_actions
 

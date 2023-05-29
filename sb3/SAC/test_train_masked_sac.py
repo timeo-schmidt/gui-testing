@@ -1,5 +1,6 @@
 # Algorithm imports
 from stable_baselines3 import SAC
+from custom_sac_policy import MaskedSACPolicy
 
 # Environment imports
 import browser_gym_env
@@ -10,19 +11,17 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Experiment parameters
-EXPERIMENT_NAME = "sac_vanilla_with_framestack_500k"
+EXPERIMENT_NAME = "sac_masked_no_framestack_100k"
 MODEL_SAVE_PATH = "./models/"
-N_ENVS = 10
-MAX_BUFFER_SIZE = 50000
-USE_CHECKPOINTS = None
-USE_REPLAY_BUFFER = None
+N_ENVS = 1
+MAX_BUFFER_SIZE = 10000
 
 # Prepare environment
 env = make_vec_env(
     "browser_gym_env/WebBrowserEnv-v0", 
     n_envs=N_ENVS, 
     vec_env_cls=SubprocVecEnv, 
-    env_kwargs={"masking": False, "log_steps": True},
+    env_kwargs={"masking": True, "log_steps": True},
     vec_env_kwargs=dict(start_method='fork')
 )
 
@@ -30,35 +29,26 @@ env = make_vec_env(
 
 # Prepare model
 model = SAC(
-    "CnnPolicy", 
+    MaskedSACPolicy, 
     env,
     verbose=1, 
     device="mps", 
     seed=42,
-    tensorboard_log="./tensorboard/",
-    # buffer_size=MAX_BUFFER_SIZE,
+    buffer_size=1,
+    learning_starts=1,
+    batch_size=1,
 )
-
-# Load checkpoints
-if USE_CHECKPOINTS:
-    model = SAC.load(USE_CHECKPOINTS, env=env, device="mps")
-
-# Load replay buffer
-if USE_REPLAY_BUFFER:
-    model.load_replay_buffer(USE_REPLAY_BUFFER)
 
 # Train the model and save checkpoints
 checkpoint_callback = CheckpointCallback(
-  save_freq=10000,
+  save_freq=50000,
   save_path=MODEL_SAVE_PATH,
   name_prefix=EXPERIMENT_NAME,
-  save_replay_buffer=False,
+  save_replay_buffer=True,
   save_vecnormalize=True,
 )
 
 model.learn(
-    total_timesteps=500000, 
-    log_interval=4, 
-    tb_log_name=EXPERIMENT_NAME, 
-    callback=checkpoint_callback
+    total_timesteps=100000, 
+    log_interval=4
 )

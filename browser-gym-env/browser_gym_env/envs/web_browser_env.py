@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import torch as th
 import gymnasium as gym
 from gymnasium import spaces
 
@@ -12,16 +13,16 @@ from browser_gym_env.envs.web_app_interface.web_app_interface import WebAppInter
 
 # Environment Settings
 VIEWPORT_SIZE = (1080, 720)                 # The size of the browser window in pixels as a tuple: (width, height)
-DOWNSCALE_SIZE = (128, 128)                 # The size of the downsampled screenshot in pixels as a tuple: (width, height)
+DOWNSCALE_SIZE = (300, 200)                 # The size of the downsampled screenshot in pixels as a tuple: (width, height)
 STARTING_URL = "http://localhost:3000/"     # The URL to load when the environment is reset
 MAX_EPISODE = 20                            # The maximum number of steps in an episode (aka Horizon)
-BROWSER_RESET_INTERVAL = 1000               # The number of steps after which the browser is re-launched to free up memory
-DISCRETISED_ACTION_SPACE_SIZE = (128, 128)
+BROWSER_RESET_INTERVAL = 901                # The number of steps after which the browser is re-launched to free up memory (using non random number to make error attribution easier)
+DISCRETISED_ACTION_SPACE_SIZE = (300, 200)
 
 class WebBrowserEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True):
+    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True, record_video=False):
         self.viewport_size = VIEWPORT_SIZE
         self.downscale_size = DOWNSCALE_SIZE
         self.starting_url = STARTING_URL
@@ -51,6 +52,11 @@ class WebBrowserEnv(gym.Env):
         # Initialize the WebAppInterface
         self.web_app_interface = None
         self._init_browser()
+
+        # Start the video recording if the flag is set
+        self.record_video = record_video
+        if self.record_video:
+            self.web_app_interface.start_recording()
 
         # Calculate and store the inner window size through JS call
         self.inner_window_size = self.web_app_interface.browser.execute_script("return { width: window.innerWidth, height: window.innerHeight }")
@@ -181,6 +187,9 @@ class WebBrowserEnv(gym.Env):
             tensor = tensor.resize(DISCRETISED_ACTION_SPACE_SIZE, resample=Image.BILINEAR)
             tensor = np.asarray(tensor)
             tensor = tensor.reshape(tensor.shape[0], tensor.shape[1], 1)
+
+        # Set all the values that are not equal to 255 to 0
+        tensor = np.where(tensor == 255, tensor, 0)
 
         return tensor
 
@@ -326,15 +335,7 @@ class WebBrowserEnv(gym.Env):
         reward = len(new_xpaths)
 
         if (reward == 0):
-            # Check wether the action occured at a clickable location and at least give some reward
-            if self.reward_clickable:
-                mask = self.get_interactable_element_mask()
-                mask = mask.squeeze()
-                actions[0] = np.minimum(actions[0], mask.shape[1]-1)
-                actions[1] = np.minimum(actions[1], mask.shape[0]-1)
-                reward = 0.5*int(mask[actions[1], actions[0]] == 0)
-            else:
-                reward = -0.5
+            reward = -0.01
         elif is_deadend:
             reward = -10
         else:
@@ -392,37 +393,39 @@ class WebBrowserEnv(gym.Env):
             self.episode_step_count = 0
 
 
-        # if self.prev_obs is not None:
-        #     # Get the screenshot and mask of the previous observation
-        #     screenshot = self.prev_obs["screenshot"]
-        #     mask  = self.prev_obs["clickable_elements"]
-        #     # print the shapes in a single line nicely
-        #     # print(f"Shapes: {screenshot.shape}, {mask.shape}") # Shapes: (128, 128, 3), (720, 1080, 1)
+        if self.prev_obs is not None and self.masking and False:
+            # Get the screenshot and mask of the previous observation
+            screenshot = self.prev_obs["screenshot"]
+            mask  = self.prev_obs["clickable_elements"]
+            # print the shapes in a single line nicely
+            # print(f"Shapes: {screenshot.shape}, {mask.shape}") # Shapes: (128, 128, 3), (720, 1080, 1)
 
-        #     # Make sure the data types are uint8
-        #     screenshot = screenshot.astype(np.uint8)
-        #     mask = mask.astype(np.uint8)
+            # Make sure the data types are uint8
+            screenshot = screenshot.astype(np.uint8)
+            mask = mask.astype(np.uint8)
 
-        #     # Convert arrays to Pillow Images
-        #     screenshot_img = Image.fromarray(screenshot, 'RGB')  # assuming screenshot is in RGB format
-        #     mask_img = Image.fromarray(mask.squeeze(), 'L')  # assuming mask is grayscale
+            # Convert arrays to Pillow Images
+            screenshot_img = Image.fromarray(screenshot, 'RGB')  # assuming screenshot is in RGB format
+            mask_img = Image.fromarray(mask.squeeze(), 'L')  # assuming mask is grayscale
 
-        #     # Resize the screenshot to the mask size
-        #     screenshot_img = screenshot_img.resize(mask_img.size)
+            # Resize the screenshot to the mask size
+            screenshot_img = screenshot_img.resize(mask_img.size)
 
-        #     # Now apply the mask to the screenshot
-        #     screenshot_img.putalpha(mask_img)
+            # Now apply the mask to the screenshot
+            screenshot_img.putalpha(mask_img)
 
-        #     # Now draw a red circle at the click location
-        #     draw = ImageDraw.Draw(screenshot_img)
-        #     draw.ellipse((x-5, y-5, x+5, y+5), fill=(255, 0, 0, 255))
+            # Now draw a red circle at the click location
+            draw = ImageDraw.Draw(screenshot_img)
+            # Scale the click location to the mask size
+            x_scaled = int(x * mask.shape[0] / VIEWPORT_SIZE[0])
+            y_scaled = int(y * mask.shape[1] / VIEWPORT_SIZE[1])
 
-        #     # Save the image with the env id as name
-        #     screenshot_img.save(f"env_{self.env_id}.png")
-        # else:
-        #     print("no prev obs")
+            draw.ellipse((y_scaled-5, x_scaled-5, y_scaled+5, x_scaled+5), fill='red', outline='red')
 
-        # self.prev_obs = observation
+            # Save the image with the env id as name
+            screenshot_img.save(f"env_{self.env_id}.png")
+
+        self.prev_obs = observation
 
         if self.log_steps:
             # Print episode, action, reward all fixed length
@@ -432,6 +435,10 @@ class WebBrowserEnv(gym.Env):
         self.browser_open_steps += 1
         if(self.browser_open_steps >= BROWSER_RESET_INTERVAL):
             self._init_browser()
+
+        # Include a delay if a video is being recorded
+        if self.record_video:
+            time.sleep(1)
 
         return observation, reward, terminated, truncated, info
 
@@ -445,4 +452,6 @@ class WebBrowserEnv(gym.Env):
     This function closes the browser.
     """
     def close(self):
+        if self.record_video:
+            self.web_app_interface.stop_recording()
         self.web_app_interface.browser.quit()

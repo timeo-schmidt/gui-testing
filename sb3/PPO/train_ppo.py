@@ -10,7 +10,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Experiment parameters
-EXPERIMENT_NAME = "ppo_vanilla_100k"
+EXPERIMENT_NAME = "ppo_vanilla_zoo_params_100k"
 MODEL_SAVE_PATH = "./models/"
 N_ENVS = 10
 MAX_BUFFER_SIZE = 30000
@@ -34,7 +34,15 @@ model = PPO(
     verbose=1, 
     device="mps", 
     tensorboard_log="./tensorboard/",
-    n_steps=512
+    n_steps=20,
+    n_epochs=4,
+    batch_size=200,
+    # learning rate lin_2.5e-4 to callable
+    learning_rate=lambda f: f * 2.5e-4,
+    # clip range lin_0.1 to callable
+    clip_range=lambda f: f * 0.1,
+    vf_coef=0.5,
+    ent_coef=0.01
 )
 
 
