@@ -3,3 +3,4 @@ screenshots/
 tensorboard/
 *__pycache__*
 models/
+key.txt

@@ -10,7 +10,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Experiment parameters
-EXPERIMENT_NAME = "ppo_vanilla_zoo_params_100k"
+EXPERIMENT_NAME = "ppo_vanilla_zoo_params__no_framestack_100k"
 MODEL_SAVE_PATH = "./models/"
 N_ENVS = 10
 MAX_BUFFER_SIZE = 30000
@@ -25,7 +25,7 @@ env = make_vec_env(
     vec_env_kwargs=dict(start_method='fork')
 )
 
-env = VecFrameStack(env, n_stack=4)
+# env = VecFrameStack(env, n_stack=4)
 
 # Prepare model
 model = PPO(

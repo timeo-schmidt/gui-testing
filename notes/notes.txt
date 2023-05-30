@@ -41,3 +41,10 @@ NEXT STEPS:
     - Framstacking Tuning/Disabling Trial
     - Implementing LSTM Policy
 - Full training run with PPO
+
+ 
+ 	
+		
+Richard😬
+
+Just gave GPT-4 access to use Chrome however it wants (click, scroll, fill forms) thru Auto-GPT agent. The results were mind-blowing!

@@ -10,10 +10,10 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Experiment parameters
-EXPERIMENT_NAME = "sac_vanilla_with_framestack_500k"
+EXPERIMENT_NAME = "sac_graystack_3_500k"
 MODEL_SAVE_PATH = "./models/"
 N_ENVS = 10
-MAX_BUFFER_SIZE = 50000
+MAX_BUFFER_SIZE = 100000
 USE_CHECKPOINTS = None
 USE_REPLAY_BUFFER = None
 
@@ -22,16 +22,16 @@ env = make_vec_env(
     "browser_gym_env/WebBrowserEnv-v0", 
     n_envs=N_ENVS, 
     vec_env_cls=SubprocVecEnv, 
-    env_kwargs={"masking": False, "log_steps": True},
+    env_kwargs={"masking": False, "log_steps": True, "grayscale":True},
     vec_env_kwargs=dict(start_method='fork')
 )
 
-# env = VecFrameStack(env, n_stack=4)
+env = VecFrameStack(env, n_stack=3)
 
 # Prepare model
 model = SAC(
     "CnnPolicy", 
-    env,
+    env
     verbose=1, 
     device="mps", 
     seed=42,

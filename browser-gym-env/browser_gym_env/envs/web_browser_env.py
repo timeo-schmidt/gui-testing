@@ -9,20 +9,20 @@ import string
 
 from PIL import Image, ImageDraw
 
-from browser_gym_env.envs.web_app_interface.web_app_interface import WebAppInterface
+from web_app_interface.web_app_interface import WebAppInterface
 
 # Environment Settings
 VIEWPORT_SIZE = (1080, 720)                 # The size of the browser window in pixels as a tuple: (width, height)
-DOWNSCALE_SIZE = (300, 200)                 # The size of the downsampled screenshot in pixels as a tuple: (width, height)
+DOWNSCALE_SIZE = (128, 128)                 # The size of the downsampled screenshot in pixels as a tuple: (width, height)
 STARTING_URL = "http://localhost:3000/"     # The URL to load when the environment is reset
 MAX_EPISODE = 20                            # The maximum number of steps in an episode (aka Horizon)
 BROWSER_RESET_INTERVAL = 901                # The number of steps after which the browser is re-launched to free up memory (using non random number to make error attribution easier)
-DISCRETISED_ACTION_SPACE_SIZE = (300, 200)
+DISCRETISED_ACTION_SPACE_SIZE = (128, 128)
 
 class WebBrowserEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True, record_video=False):
+    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True, grayscale=False, record_video=False):
         self.viewport_size = VIEWPORT_SIZE
         self.downscale_size = DOWNSCALE_SIZE
         self.starting_url = STARTING_URL
@@ -31,14 +31,17 @@ class WebBrowserEnv(gym.Env):
         self.reward_clickable = reward_clickable
         self.log_steps = log_steps
 
+        self.grayscale = grayscale
+        n_img_channels = 1 if grayscale else 3
+
         # Depending on the masking flag, the observation space is either only the screenshot or a dictionary of the screenshot and mask
         if self.masking:
             self.observation_space = spaces.Dict({
-                "screenshot": spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], 3), dtype=np.uint8),
+                "screenshot": spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], n_img_channels), dtype=np.uint8),
                 "clickable_elements": spaces.Box(low=0, high=255, shape=(DISCRETISED_ACTION_SPACE_SIZE[1], DISCRETISED_ACTION_SPACE_SIZE[0], 1), dtype=np.uint8)
             })
         else:
-            self.observation_space = spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], 3), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], n_img_channels), dtype=np.uint8)
 
         # The action space is continuous and consists of two numbers: the x and y click coordinates
         self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
@@ -204,6 +207,12 @@ class WebBrowserEnv(gym.Env):
         # Convert to a numpy array and remove the alpha/transparency channel
         screenshot = np.asarray(screenshot)[...,:3]
 
+        # Convert the screenshot to grayscale using cv2
+        if self.grayscale:
+            screenshot = np.dot(screenshot[...,:3], [0.2989, 0.5870, 0.1140])
+            screenshot = screenshot.astype(np.uint8)
+            screenshot = np.expand_dims(screenshot, axis=-1)
+
         # if self.masking:
         #     mask = self.get_interactable_regions_dict()
 
@@ -220,11 +229,12 @@ class WebBrowserEnv(gym.Env):
 
         # # Get the screenshot and mask of the previous observation
         # # Make sure the data types are uint8
-        # ss = screenshot.astype(np.uint8)
+        #. ss = screenshot.astype(np.uint8)
         # mask = mask.astype(np.uint8)
 
         # # Convert arrays to Pillow Images
-        # screenshot_img = Image.fromarray(ss, 'RGB')  # assuming screenshot is in RGB format
+        #. ss = ss.squeeze()
+        #. screenshot_img = Image.fromarray(ss, 'L')  # assuming screenshot is in RGB format
         # mask_img = Image.fromarray(mask.squeeze(), 'L')  # assuming mask is grayscale
 
         # # Resize the screenshot to the mask size
@@ -234,7 +244,7 @@ class WebBrowserEnv(gym.Env):
         # screenshot_img.putalpha(mask_img)
 
         # # Save the image with env id and random number
-        # screenshot_img.save(f"{self.env_id}_.png")
+        #. screenshot_img.save(f"{self.env_id}_.png")
 
         if self.masking:
             obs = { 
@@ -438,7 +448,7 @@ class WebBrowserEnv(gym.Env):
 
         # Include a delay if a video is being recorded
         if self.record_video:
-            time.sleep(1)
+            time.sleep(2)
 
         return observation, reward, terminated, truncated, info
 

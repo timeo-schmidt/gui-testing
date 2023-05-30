@@ -1,5 +1,5 @@
 # Algorithm imports
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, PPO
 
 # Environment imports
 import browser_gym_env
@@ -7,29 +7,29 @@ from stable_baselines3.common.vec_env import VecFrameStack, SubprocVecEnv, VecTr
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.evaluation import evaluate_policy
 
-MODEL_PATH = "./models/sac_vanilla_500k_100000_steps.zip"
+MODEL_PATH = "./models/sac_graystack_3_500k_300000_steps.zip"
 
 # Prepare environment
 env = make_vec_env(
     "browser_gym_env/WebBrowserEnv-v0", 
     n_envs=1, 
     vec_env_cls=SubprocVecEnv, 
-    env_kwargs={"masking": False, "log_steps": True, "record_video":True},
+    env_kwargs={"masking": False, "log_steps": True, "record_video":True, "grayscale":True},
     vec_env_kwargs=dict(start_method='fork')
 )
 
-# env = VecFrameStack(env, n_stack=4)
+env = VecFrameStack(env, n_stack=3)
 env = VecTransposeImage(env)
 
 # Prepare model
-model = SAC(
-    "CnnPolicy", 
-    env,
-    verbose=1, 
-    device="mps", 
-    seed=42,
-    tensorboard_log="./tensorboard/",
-)
+# model = PPO(
+#     "CnnPolicy", 
+#     env,
+#     verbose=1, 
+#     device="mps", 
+#     seed=42,
+#     tensorboard_log="./tensorboard/",
+# )
 
 # Load checkpoints
 model = SAC.load(MODEL_PATH, env=env, device="mps")
