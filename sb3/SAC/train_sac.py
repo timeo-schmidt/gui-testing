@@ -31,7 +31,7 @@ env = VecFrameStack(env, n_stack=3)
 # Prepare model
 model = SAC(
     "CnnPolicy", 
-    env
+    env,
     verbose=1, 
     device="mps", 
     seed=42,

@@ -4,3 +4,4 @@ tensorboard/
 *__pycache__*
 models/
 key.txt
+*chromedriver/
