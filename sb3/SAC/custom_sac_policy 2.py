@@ -35,6 +35,38 @@ LOG_STD_MIN = -20
 
 # Custom Action Distribution
 class MaskedSquashedDiagGaussianDistribution(SquashedDiagGaussianDistribution):
+    def __init__(self, action_dim: int, epsilon: float = 1e-6):
+        super().__init__(action_dim, epsilon)
+
+    # def sample(self) -> th.Tensor:
+    #     # Reparametrization trick to pass gradients
+    #     self.gaussian_actions = super().sample()
+
+    #     # For each action, draw 1000 samples from the normal distribution
+        
+    #     screen_size = th.tensor(self.mask.shape[2:]).to(self.gaussian_actions.device)
+    #     zero_tensor = th.tensor([0,0]).to(self.gaussian_actions.device).type(th.long)
+
+    #     # If the mask is active, ensure that the sampling is according to the mask
+    #     if self.mask is not None and self.mask_valid:
+    #         for i, a in enumerate(self.gaussian_actions):
+    #             # Check if the action is valid
+    #             # Convert the action to the screen click coordinates
+    #             scaled_action = (((a + 1) / 2) * th.tensor(screen_size)).type(th.long).clamp(th.tensor(zero_tensor), screen_size - 1)
+    #             z=0
+    #             for _ in range(10000):
+    #                 z+=1
+    #                 if self.mask[i, -1, scaled_action[0], scaled_action[1]].item() != 255:
+    #                     # If the action is invalid, sample again
+    #                     self.gaussian_actions[i] = super().sample()[i]
+    #                     scaled_action = (((self.gaussian_actions[i] + 1) / 2) * th.tensor(screen_size)).type(th.long).clamp(th.tensor(zero_tensor), screen_size - 1)
+    #                 else:
+    #                     break
+    #             if z == 10000:
+    #                 print("ERROR: Could not find a valid action")
+
+    #     return th.tanh(self.gaussian_actions)
+        
     def masked_actions_from_params(self, mean_actions: th.Tensor, log_std: th.Tensor, mask: th.Tensor, deterministic: bool = False) -> th.Tensor:
         self.mask = mask
         # Check that the mask does have at least 10% of clickable values
@@ -47,19 +79,22 @@ class MaskedSquashedDiagGaussianDistribution(SquashedDiagGaussianDistribution):
 # Custom Feature Extractor
 class CustomCNNExtractor(NatureCNN):
 
-    # def __init__(
-    #     self,
-    #     observation_space: gym.Space,
-    #     features_dim: int = 512,
-    #     normalized_image: bool = False,
-    # ) -> None:
+    def __init__(
+        self,
+        observation_space: gym.Space,
+        features_dim: int = 512,
+        normalized_image: bool = False,
+    ) -> None:
+        
+        # # Set the obstervation space to only the screenshot
+        # observation_space = observation_space["screenshot"]
 
-    #     # Call the parent constructor
-    #     super().__init__(
-    #         observation_space,
-    #         features_dim,
-    #         normalized_image=normalized_image
-    #     )
+        # Call the parent constructor
+        super().__init__(
+            observation_space,
+            features_dim,
+            normalized_image=normalized_image
+        )
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         observations = observations["screenshot"]
@@ -100,9 +135,8 @@ class MaskedActor(Actor):
         # Overriding the action distribution
         action_dim = get_action_dim(self.action_space)
         self.action_dist = MaskedSquashedDiagGaussianDistribution(action_dim)
-
-
-    def _masked_action_log_prob(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor]:
+    
+    def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
         mean_actions, log_std, kwargs = self.get_action_dist_params(obs)
         x =  self.action_dist.actions_from_params(mean_actions, log_std, deterministic=deterministic, **kwargs)
 
@@ -111,7 +145,6 @@ class MaskedActor(Actor):
 
         # Create a copy of x
         masked_actions = x.clone()
-        action_log_probs = th.full((x.shape[0],), -np.inf, device=x.device)
 
         # Iterate through the batch
         for i in range(x.shape[0]):
@@ -143,49 +176,42 @@ class MaskedActor(Actor):
             # Set the masked_actions
             masked_actions[i] = indices[action_index]
 
-            # Set the log probs
-            action_log_probs[i] = log_probs[action_index]
+            # DEBUG CODE
 
-            ###### DEBUG ######
             # Convert arrays to Pillow Images
-            # screenshot_img = Image.fromarray(np.transpose(obs["screenshot"][i].detach().cpu().numpy(), (1, 2, 0)), 'RGB')
-            # mask_img = Image.fromarray(mask[i].squeeze().cpu().detach().numpy(), 'L')
+            
+            screenshot_img = Image.fromarray(np.transpose(obs["screenshot"][i].detach().cpu().numpy(), (1, 2, 0)), 'RGB')
+            mask_img = Image.fromarray(mask.squeeze().cpu().detach().numpy(), 'L')                # assuming mask is grayscale
 
-            # # Resize the screenshot to the mask size
-            # screenshot_img = screenshot_img.resize(mask_img.size)
+            # Resize the screenshot to the mask size
+            screenshot_img = screenshot_img.resize(mask_img.size)
 
-            # # Now apply the mask to the screenshot
-            # screenshot_img.putalpha(mask_img)
+            # Now apply the mask to the screenshot
+            screenshot_img.putalpha(mask_img)
 
-            # # Now draw a red circle at the click location
-            # draw = ImageDraw.Draw(screenshot_img)
+            # Now draw a red circle at the click location
+            draw = ImageDraw.Draw(screenshot_img)
 
-            # # masked actions e.g. tensor([[-0.9213,  0.0236]], device='mps:0')
-            # # mask.shape = 
-            # # Scale the click location to the mask size
-            # x_scaled = int((masked_actions[i][0]+1) * 0.5 * mask[i].shape[0])
-            # y_scaled = int((masked_actions[i][1]+1) * 0.5 * mask[i].shape[1])
+            # Scale the click location to the mask size
+            x_scaled = int((masked_actions[i][0]+1) * 0.5 * mask.shape[1])
+            y_scaled = int((masked_actions[i][1]+1) * 0.5 * mask.shape[0])
 
-            # # Check that the click location is within the screenshot image
-            # if(x_scaled < 0 or x_scaled >= screenshot_img.size[1] or y_scaled < 0 or y_scaled >= screenshot_img.size[0]):
-            #     print("click location is out of bounds!")
-            #     continue
+            draw.ellipse((x_scaled-5, y_scaled-5, x_scaled+5, y_scaled+5), fill='red', outline='red')
 
-            # draw.ellipse((y_scaled-1, x_scaled-1, y_scaled+1, x_scaled+1), fill='red', outline='red')
+            # Save the image with the env id as name
+            screenshot_img.save(f"debug.png")
 
-            # # Save the image with the env id as name
-            # screenshot_img.save(f"debug_{i}.png")
+            import readline # optional, will allow Up/Down/History in the console
+            import code
+            variables = globals().copy()
+            variables.update(locals())
+            shell = code.InteractiveConsole(variables)
+            shell.interact()
 
-            ###### DEBUG ######
 
-        return masked_actions, action_log_probs
-    
-    def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
-        actions, log_probs = self._masked_action_log_prob(obs, deterministic=deterministic)
-        return actions
-    
-    # def action_log_prob(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
-    #     return self._masked_action_log_prob(obs)
+
+        return masked_actions
+
 
 
 class MaskedSACPolicy(SACPolicy):

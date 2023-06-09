@@ -5,3 +5,5 @@ tensorboard/
 models/
 key.txt
 *chromedriver/
+experiments/
+*.pyc

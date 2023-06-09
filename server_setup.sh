@@ -12,3 +12,12 @@ cd cypress-realworld-app/
 yarn
 
 pip install git+https://github.com/DLR-RM/stable-baselines3
+
+# python deps manually
+
+apt-get update && apt-get install ffmpeg libsm6 libxext6  -y
+
+# install chromedriver (download and unzip
+
+sudo apt update 
+sudo apt install -y unzip xvfb libxi6 libgconf-2-4 )

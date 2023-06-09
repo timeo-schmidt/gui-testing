@@ -1,4 +1,5 @@
 import time
+import math
 import numpy as np
 import torch as th
 import gymnasium as gym
@@ -22,12 +23,13 @@ DISCRETISED_ACTION_SPACE_SIZE = (128, 128)
 class WebBrowserEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True, grayscale=False, record_video=False):
+    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True, grayscale=False, record_video=False, mask_centerpoint_only=False):
         self.viewport_size = VIEWPORT_SIZE
         self.downscale_size = DOWNSCALE_SIZE
         self.starting_url = STARTING_URL
         
         self.masking = masking
+        self.mask_centerpoint_only = mask_centerpoint_only
         self.reward_clickable = reward_clickable
         self.log_steps = log_steps
 
@@ -151,12 +153,11 @@ class WebBrowserEnv(gym.Env):
     This function retrieves an (image) mask with all the interactable elements in the current page.
     """
     def get_interactable_element_mask(self):
-
         # Get the interactable elements
         interactable_elements = self.get_interactable_regions_dict()
 
         # Initialize the mask tensor with zeroes
-        tensor = np.zeros((VIEWPORT_SIZE[1], VIEWPORT_SIZE[0], 1), dtype=np.uint8)
+        tensor = np.zeros((DISCRETISED_ACTION_SPACE_SIZE[1], DISCRETISED_ACTION_SPACE_SIZE[0], 1), dtype=np.uint8)
 
         # Iterate over interactable elements and produce the mask
         for element in interactable_elements:
@@ -175,25 +176,27 @@ class WebBrowserEnv(gym.Env):
             bottomRight['y'] = max(0, min(VIEWPORT_SIZE[1] - 1, bottomRight['y']))
 
             # Scale the coordinates to the inner window size
-            topLeft['x'] = int(topLeft['x'] * VIEWPORT_SIZE[0] / self.inner_window_size['width'])
-            topLeft['y'] = int(topLeft['y'] * VIEWPORT_SIZE[1] / self.inner_window_size['height'])
-            bottomRight['x'] = int(bottomRight['x'] * VIEWPORT_SIZE[0] / self.inner_window_size['width'])
-            bottomRight['y'] = int(bottomRight['y'] * VIEWPORT_SIZE[1] / self.inner_window_size['height'])
+            topLeft['x'] = math.ceil(topLeft['x'] * DISCRETISED_ACTION_SPACE_SIZE[0] / self.inner_window_size['width'])
+            topLeft['y'] = math.ceil(topLeft['y'] * DISCRETISED_ACTION_SPACE_SIZE[1] / self.inner_window_size['height'])
+            bottomRight['x'] = math.floor(bottomRight['x'] * DISCRETISED_ACTION_SPACE_SIZE[0] / self.inner_window_size['width'])
+            bottomRight['y'] = math.floor(bottomRight['y'] * DISCRETISED_ACTION_SPACE_SIZE[1] / self.inner_window_size['height'])
 
-            # Update the tensor 
-            tensor[topLeft['y']:bottomRight['y'], topLeft['x']:bottomRight['x']] = 255
-            
-        if VIEWPORT_SIZE != DISCRETISED_ACTION_SPACE_SIZE:
-            # Resize the tensor to the downscale size with pillow
-            tensor = tensor.squeeze().astype(np.uint8)
-            tensor = Image.fromarray(tensor, mode='L')
-            tensor = tensor.resize(DISCRETISED_ACTION_SPACE_SIZE, resample=Image.BILINEAR)
-            tensor = np.asarray(tensor)
-            tensor = tensor.reshape(tensor.shape[0], tensor.shape[1], 1)
+            if self.mask_centerpoint_only:
+                # Find the center points
+                center = {
+                    'x': int((topLeft['x'] + bottomRight['x']) / 2),
+                    'y': int((topLeft['y'] + bottomRight['y']) / 2)
+                }
+                
+                # Clip the coordinates to the viewport size
+                center['x'] = max(0, min(DISCRETISED_ACTION_SPACE_SIZE[0] - 1, center['x']))
+                center['y'] = max(0, min(DISCRETISED_ACTION_SPACE_SIZE[1] - 1, center['y']))
 
-        # Set all the values that are not equal to 255 to 0
-        tensor = np.where(tensor == 255, tensor, 0)
-
+                tensor[center['y'], center['x'], 0] = 255
+            else:
+                # Update the tensor 
+                tensor[topLeft['y']:bottomRight['y'], topLeft['x']:bottomRight['x']] = 255
+                
         return tensor
 
     """
@@ -212,44 +215,31 @@ class WebBrowserEnv(gym.Env):
             screenshot = np.dot(screenshot[...,:3], [0.2989, 0.5870, 0.1140])
             screenshot = screenshot.astype(np.uint8)
             screenshot = np.expand_dims(screenshot, axis=-1)
+        
+        mask = self.get_interactable_element_mask()
 
-        # if self.masking:
-        #     mask = self.get_interactable_regions_dict()
-
-        # # Normalize the values to be between 0 and 1
-        # obs = obs / 255.0
-
-        # # Remove any non-finite values
-        # obs = np.nan_to_num(obs, copy=False, nan=0.0, posinf=1.0, neginf=0)
-
-        # # as a dummy, create a random clickable elements array with dtyp uint8
-        # # Create an array where the top half is 0 and the bottom half is 255 with dtype uint8
-        # clickable_elements = np.zeros((VIEWPORT_SIZE[1], VIEWPORT_SIZE[0], 1), dtype=np.uint8)
-        # clickable_elements[700:,700:] = 255
-
-        # # Get the screenshot and mask of the previous observation
-        # # Make sure the data types are uint8
-        #. ss = screenshot.astype(np.uint8)
+        ############### DEBUG ###############
+        # Get the screenshot and mask of the previous observation
+        # Make sure the data types are uint8
+        # ss = screenshot.astype(np.uint8)        
         # mask = mask.astype(np.uint8)
-
         # # Convert arrays to Pillow Images
-        #. ss = ss.squeeze()
-        #. screenshot_img = Image.fromarray(ss, 'L')  # assuming screenshot is in RGB format
-        # mask_img = Image.fromarray(mask.squeeze(), 'L')  # assuming mask is grayscale
-
+        # ss = ss.squeeze()
+        # ms = mask.squeeze()
+        # screenshot_img = Image.fromarray(ss, 'RGB')  # assuming screenshot is in RGB format
+        # mask_img = Image.fromarray(ms, 'L')  # assuming mask is grayscale
         # # Resize the screenshot to the mask size
         # screenshot_img = screenshot_img.resize(mask_img.size)
-
         # # Now apply the mask to the screenshot
         # screenshot_img.putalpha(mask_img)
-
         # # Save the image with env id and random number
-        #. screenshot_img.save(f"{self.env_id}_.png")
+        # screenshot_img.save(f"{self.env_id}_.png")
+        ############### END DEBUG ###############
 
         if self.masking:
             obs = { 
                 "screenshot": screenshot,
-                "clickable_elements": self.get_interactable_element_mask()
+                "clickable_elements": mask
             }
         else:
             obs = screenshot

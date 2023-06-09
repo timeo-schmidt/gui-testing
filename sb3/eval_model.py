@@ -7,7 +7,7 @@ from stable_baselines3.common.vec_env import VecFrameStack, SubprocVecEnv, VecTr
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.evaluation import evaluate_policy
 
-MODEL_PATH = "./models/sac_graystack_3_500k_300000_steps.zip"
+MODEL_PATH = "./models/sac_graystack_5_500k_500000_steps.zip"
 
 # Prepare environment
 env = make_vec_env(
