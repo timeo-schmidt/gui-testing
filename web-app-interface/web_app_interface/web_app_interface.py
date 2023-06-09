@@ -24,8 +24,6 @@ from mss import mss
 import threading
 from dataclasses import dataclass
 
-CHROMEDRIVER_EXEC = "./web-app-interface/web_app_interface/chromedriver/chromedriver"
-
 class WebAppInterface(AbstractAppInterface):
 
     """
@@ -38,60 +36,62 @@ class WebAppInterface(AbstractAppInterface):
         verbose: Whether to print out the actions being performed
     """
 
-    def __init__(self, screen_size=(1920, 1080), artifact_path="./screenshots", starting_url="https://www.youtube.com/", detached=False, verbose=True, headless=True):
-        # Options passed to browser
+    def __init__(self, cfg):
+        # Fetch configuration parameters
+        self._set_config_params(cfg)
+
+        # Setup WebDriver options
+        options = self._configure_webdriver_options(cfg)
+
+        # Define and verify ChromeDriver executable path
+        chrome_driver_path = self._verify_chromedriver_path(cfg)
+
+        # Initialize the Selenium WebDriver
+        self._initialize_selenium_driver(chrome_driver_path, options)
+
+        # Additional parameters and tasks
+        self._post_initialisation_tasks(cfg)
+
+
+    def _set_config_params(self, cfg):
+        self.viewport_size = cfg.web_app_interface.viewport_dimensions
+        self.artefact_path = cfg.artefact_path
+        self.starting_url = cfg.env_config.test_url
+        self.verbose = cfg.web_app_interface.verbose_mode
+
+    def _configure_webdriver_options(self, cfg):
         options = webdriver.ChromeOptions()
-        options.add_argument("window-size=" + str(screen_size[0]) + "," + str(screen_size[1]))
-        if headless:
+        options.add_argument("window-size=" + str(self.viewport_size[0]) + "," + str(self.viewport_size[1]))
+        if cfg.web_app_interface.headless_mode:
             options.add_argument("--headless=new")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
-        options.add_experimental_option("detach", detached)
-        prefs = {"credentials_enable_service": False,
-            "profile.password_manager_enabled": False}
+        options.add_experimental_option("detach", cfg.web_app_interface.detached_mode)
+        prefs = {"credentials_enable_service": False, "profile.password_manager_enabled": False}
         options.add_experimental_option("prefs", prefs)
-        
-        # First check if the chrome driver is installed, if not install it
-        # Check if executable exists in ./chromedriver/chrome_driver
-        if (os.path.exists(CHROMEDRIVER_EXEC)):
+        return options
+
+    def _verify_chromedriver_path(self, cfg):
+        chromedriver_exec = cfg.web_app_interface.chromedriver_path
+        if (os.path.exists(chromedriver_exec)):
             print("Using local chromedriver")
-            chrome_driver_path = CHROMEDRIVER_EXEC
+            return chromedriver_exec
         else:
-            # If not, check if it is installed in the system
             print("Using chromedriver from webdriver_manager")
-            chrome_driver_path = ChromeDriverManager().install()
-        
-        # Initialise the selenium web driver
+            return ChromeDriverManager().install()
+
+    def _initialize_selenium_driver(self, chrome_driver_path, options):
         self.browser = webdriver.Chrome(chrome_driver_path, options=options)
+        self.browser.get(self.starting_url)
 
-        # Call the base url
-        self.browser.get(starting_url)
-        self.starting_url = starting_url
-
-        # Check if the artifact path exists, if not create it
-        if not os.path.exists(artifact_path):
-            os.makedirs(artifact_path)
-        # Set the artifact path
-        self.artifact_path = artifact_path
-
+    def _post_initialisation_tasks(self, cfg):
         self.action_history = []
         self.start_time = time.time()
-        self.verbose = verbose
-
-        # Get the browser window location
         self.window_location = self.browser.get_window_rect()
-
-        # Based on the get_window_size, get the actual viewport location on the screen
         self.viewport_size = self.get_window_size()
-
-        # Get the window handle (original tab
         self.original_tab_handle = self.browser.current_window_handle
-
         time.sleep(3)
-
-        # Inject the preamble
         inject_preamble(self)
-
         time.sleep(1)
 
     """
@@ -199,6 +199,7 @@ class WebAppInterface(AbstractAppInterface):
     """
     This function returns the current state of the browser window, which is a list of all the WebElements
     """
+    # TODO This may become obsolete when adding over the reward calculation helpers.
     def get_all_elements(self):
         # Get all the elements on the page
         return self.browser.find_elements(By.XPATH, "//*")
@@ -250,7 +251,7 @@ class WebAppInterface(AbstractAppInterface):
         # Check if ending with .png
         if not filename.endswith(".png"):
             filename += ".png"
-        save_path = os.path.join(self.artifact_path, filename)
+        save_path = os.path.join(self.artefact_path, filename)
         print(save_path)
         self.browser.save_screenshot(save_path)
 
@@ -273,7 +274,7 @@ class WebAppInterface(AbstractAppInterface):
     This function starts the recording of the screen (in a separate thread)
     """
     def start_recording(self, filename=time.time()):
-        vid_path = os.path.join(self.artifact_path, "screen_recording/", str(filename) + ".mp4")
+        vid_path = os.path.join(self.artefact_path, "screen_recording/", str(filename) + ".mp4")
         if not os.path.exists(os.path.dirname(vid_path)):
             os.makedirs(os.path.dirname(vid_path))
         self.recording_filename = vid_path
@@ -329,3 +330,6 @@ class WebAppInterface(AbstractAppInterface):
 
         video_writer.release()
         self._print("Screen recording saved")
+
+
+# TODO Implement a JS Exception Logger. This will be called by the inference loop.

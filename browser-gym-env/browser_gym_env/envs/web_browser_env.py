@@ -1,78 +1,78 @@
-import time
+# Python standard libraries
 import math
-import numpy as np
-import torch as th
-import gymnasium as gym
-from gymnasium import spaces
-
 import random
 import string
+import time
 
+# Third-party libraries
 from PIL import Image, ImageDraw
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import torch as th
 
+# Local application/library specific imports
 from web_app_interface.web_app_interface import WebAppInterface
 
-# Environment Settings
-VIEWPORT_SIZE = (1080, 720)                 # The size of the browser window in pixels as a tuple: (width, height)
-DOWNSCALE_SIZE = (128, 128)                 # The size of the downsampled screenshot in pixels as a tuple: (width, height)
-STARTING_URL = "http://localhost:3000/"     # The URL to load when the environment is reset
-MAX_EPISODE = 20                            # The maximum number of steps in an episode (aka Horizon)
-BROWSER_RESET_INTERVAL = 901                # The number of steps after which the browser is re-launched to free up memory (using non random number to make error attribution easier)
-DISCRETISED_ACTION_SPACE_SIZE = (128, 128)
-
 class WebBrowserEnv(gym.Env):
+
     metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, render_mode=None, masking=False, log_steps=True, reward_clickable=True, grayscale=False, record_video=False, mask_centerpoint_only=False):
-        self.viewport_size = VIEWPORT_SIZE
-        self.downscale_size = DOWNSCALE_SIZE
-        self.starting_url = STARTING_URL
-        
-        self.masking = masking
-        self.mask_centerpoint_only = mask_centerpoint_only
-        self.reward_clickable = reward_clickable
-        self.log_steps = log_steps
-
-        self.grayscale = grayscale
-        n_img_channels = 1 if grayscale else 3
-
-        # Depending on the masking flag, the observation space is either only the screenshot or a dictionary of the screenshot and mask
-        if self.masking:
-            self.observation_space = spaces.Dict({
-                "screenshot": spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], n_img_channels), dtype=np.uint8),
-                "clickable_elements": spaces.Box(low=0, high=255, shape=(DISCRETISED_ACTION_SPACE_SIZE[1], DISCRETISED_ACTION_SPACE_SIZE[0], 1), dtype=np.uint8)
-            })
-        else:
-            self.observation_space = spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], n_img_channels), dtype=np.uint8)
-
-        # The action space is continuous and consists of two numbers: the x and y click coordinates
-        self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
-
+    def __init__(self, cfg, render_mode=None):
+        # Configuration and settings
+        self.cfg = cfg
         self.render_mode = render_mode
+        self.viewport_size = cfg.web_app_interface.viewport_dimensions
+        self.browser_reset_interval = cfg.web_app_interface.browser_reset_interval
+        self.starting_url = cfg.env_config.test_url
+        self.downscale_size = cfg.env_config.downscale_size
 
-        # Store the current episode step count
+        # Environment logging and episode controls
+        self.log_steps = cfg.env_config.log_steps
         self.episode_step_count = 0
-        self.max_episode = MAX_EPISODE
+        self.max_episode = cfg.env_config.horizon_length
+
+        # Masking and grayscale settings
+        self.masking = cfg.env_config.masking
+        self.mask_centerpoint_only = cfg.env_config.mask_centerpoint_only
+        self.masked_action_space_size = cfg.env_config.masked_action_space_size
+        self.grayscale = cfg.env_config.grayscale
+        n_img_channels = 1 if self.grayscale else 3
+
+        # Define the observation space
+        self._define_observation_space(n_img_channels)
+
+        # Define the action space
+        self.action_space = spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
         # Initialize the WebAppInterface
         self.web_app_interface = None
         self._init_browser()
 
-        # Start the video recording if the flag is set
-        self.record_video = record_video
+        # Video recording settings
+        self.record_video = cfg.web_app_interface.record_video
         if self.record_video:
             self.web_app_interface.start_recording()
 
-        # Calculate and store the inner window size through JS call
+        # Interface properties
         self.inner_window_size = self.web_app_interface.browser.execute_script("return { width: window.innerWidth, height: window.innerHeight }")
 
-        # Reset reward
+        # Initialize reward
         self._init_reward()
 
-        # Following lines are for debugging purposes
-        # Generate a random 5-letter hash using python
+        # Debugging properties
         self.env_id = ''.join(random.choice(string.ascii_lowercase) for i in range(5))
         self.prev_obs = None
+
+    def _define_observation_space(self, n_img_channels):
+        if self.masking:
+            self.observation_space = spaces.Dict({
+                "screenshot": spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], n_img_channels), dtype=np.uint8),
+                "clickable_elements": spaces.Box(low=0, high=255, shape=(self.masked_action_space_size[1], self.masked_action_space_size[0], 1), dtype=np.uint8)
+            })
+        else:
+            self.observation_space = spaces.Box(low=0, high=255, shape=(self.downscale_size[1], self.downscale_size[0], n_img_channels), dtype=np.uint8)
+
 
     """
     This function is called at the start and periodically to re-launch the browsers and free up accumulated memory.
@@ -82,7 +82,7 @@ class WebBrowserEnv(gym.Env):
         if self.web_app_interface is not None:
             self.web_app_interface.browser.close()
         time.sleep(3)
-        self.web_app_interface = WebAppInterface(screen_size=self.viewport_size, starting_url=self.starting_url, detached=False, verbose=False)
+        self.web_app_interface = WebAppInterface(self.cfg)#, starting_url=self.starting_url, detached=False, verbose=False)
         self.browser_open_steps = 0
         time.sleep(10)
 
@@ -157,29 +157,29 @@ class WebBrowserEnv(gym.Env):
         interactable_elements = self.get_interactable_regions_dict()
 
         # Initialize the mask tensor with zeroes
-        tensor = np.zeros((DISCRETISED_ACTION_SPACE_SIZE[1], DISCRETISED_ACTION_SPACE_SIZE[0], 1), dtype=np.uint8)
+        tensor = np.zeros((self.masked_action_space_size[1], self.masked_action_space_size[0], 1), dtype=np.uint8)
 
         # Iterate over interactable elements and produce the mask
         for element in interactable_elements:
 
             # Skip the element if it covers more than 30% of the viewport
-            if (element['bottomRight']['x'] - element['topLeft']['x']) * (element['bottomRight']['y'] - element['topLeft']['y']) > 0.5 * VIEWPORT_SIZE[0] * VIEWPORT_SIZE[1]:
+            if (element['bottomRight']['x'] - element['topLeft']['x']) * (element['bottomRight']['y'] - element['topLeft']['y']) > 0.5 * self.viewport_size[0] * self.viewport_size[1]:
                 continue
 
             topLeft = element['topLeft']
             bottomRight = element['bottomRight']
 
             # Make sure the coordinates are within the viewport
-            topLeft['x'] = max(0, min(VIEWPORT_SIZE[0] - 1, topLeft['x']))
-            topLeft['y'] = max(0, min(VIEWPORT_SIZE[1] - 1, topLeft['y']))
-            bottomRight['x'] = max(0, min(VIEWPORT_SIZE[0] - 1, bottomRight['x']))
-            bottomRight['y'] = max(0, min(VIEWPORT_SIZE[1] - 1, bottomRight['y']))
+            topLeft['x'] = max(0, min(self.viewport_size[0] - 1, topLeft['x']))
+            topLeft['y'] = max(0, min(self.viewport_size[1] - 1, topLeft['y']))
+            bottomRight['x'] = max(0, min(self.viewport_size[0] - 1, bottomRight['x']))
+            bottomRight['y'] = max(0, min(self.viewport_size[1] - 1, bottomRight['y']))
 
             # Scale the coordinates to the inner window size
-            topLeft['x'] = math.ceil(topLeft['x'] * DISCRETISED_ACTION_SPACE_SIZE[0] / self.inner_window_size['width'])
-            topLeft['y'] = math.ceil(topLeft['y'] * DISCRETISED_ACTION_SPACE_SIZE[1] / self.inner_window_size['height'])
-            bottomRight['x'] = math.floor(bottomRight['x'] * DISCRETISED_ACTION_SPACE_SIZE[0] / self.inner_window_size['width'])
-            bottomRight['y'] = math.floor(bottomRight['y'] * DISCRETISED_ACTION_SPACE_SIZE[1] / self.inner_window_size['height'])
+            topLeft['x'] = math.ceil(topLeft['x'] * self.masked_action_space_size[0] / self.inner_window_size['width'])
+            topLeft['y'] = math.ceil(topLeft['y'] * self.masked_action_space_size[1] / self.inner_window_size['height'])
+            bottomRight['x'] = math.floor(bottomRight['x'] * self.masked_action_space_size[0] / self.inner_window_size['width'])
+            bottomRight['y'] = math.floor(bottomRight['y'] * self.masked_action_space_size[1] / self.inner_window_size['height'])
 
             if self.mask_centerpoint_only:
                 # Find the center points
@@ -189,8 +189,8 @@ class WebBrowserEnv(gym.Env):
                 }
                 
                 # Clip the coordinates to the viewport size
-                center['x'] = max(0, min(DISCRETISED_ACTION_SPACE_SIZE[0] - 1, center['x']))
-                center['y'] = max(0, min(DISCRETISED_ACTION_SPACE_SIZE[1] - 1, center['y']))
+                center['x'] = max(0, min(self.masked_action_space_size[0] - 1, center['x']))
+                center['y'] = max(0, min(self.masked_action_space_size[1] - 1, center['y']))
 
                 tensor[center['y'], center['x'], 0] = 255
             else:
@@ -319,7 +319,7 @@ class WebBrowserEnv(gym.Env):
 
         return xpaths
 
-    """
+    """ # TODO Put the reward logic into an external function, so that it can easily be replaced here by the different options.
     The reward function for the environment.
     """
     def _calculate_reward(self, actions, is_deadend=False):
@@ -417,8 +417,8 @@ class WebBrowserEnv(gym.Env):
             # Now draw a red circle at the click location
             draw = ImageDraw.Draw(screenshot_img)
             # Scale the click location to the mask size
-            x_scaled = int(x * mask.shape[0] / VIEWPORT_SIZE[0])
-            y_scaled = int(y * mask.shape[1] / VIEWPORT_SIZE[1])
+            x_scaled = int(x * mask.shape[0] / self.viewport_size[0])
+            y_scaled = int(y * mask.shape[1] / self.viewport_size[1])
 
             draw.ellipse((y_scaled-5, x_scaled-5, y_scaled+5, x_scaled+5), fill='red', outline='red')
 
@@ -433,7 +433,7 @@ class WebBrowserEnv(gym.Env):
 
         # Increment browser open steps
         self.browser_open_steps += 1
-        if(self.browser_open_steps >= BROWSER_RESET_INTERVAL):
+        if(self.browser_open_steps >= self.browser_reset_interval):
             self._init_browser()
 
         # Include a delay if a video is being recorded

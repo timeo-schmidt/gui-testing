@@ -1,0 +1,45 @@
+# All the settings that are specific to the web app browser interface
+web_app_interface:
+  chromedriver_path: "./web-app-interface/web_app_interface/chromedriver/chromedriver"
+  browser_reset_interval: 901
+  viewport_dimensions: [1080,720]
+  headless_mode: true
+  detached_mode: false
+  verbose_mode: false
+  record_video: false
+
+# All the setting relating to the Gymnasium environment
+env_config:
+  test_url: "http://localhost:3000/"
+  name: "browser_gym_env/WebBrowserEnv-v0"
+  n_envs: 1
+  frame_stack: 5
+  horizon_length: 20
+  downscale_size: [128,128]
+  masking: false
+  mask_centerpoint_only: false
+  masked_action_space_size: [128,128]
+  log_steps: true
+  grayscale: true
+
+# All the settings relating to the RL algorithm and training
+algorithm_config:
+  algorithm_type: "SAC"
+  seed: 42
+  experiment_name: "auto"
+  device: "mps"
+  max_buffer_size: 100000
+  replay_buffer_load_path: ""
+  checkpoint_load_path: ""
+  artefact_base_path: "./experiments/"
+  checkpoint_config:
+    save_freq: 10000
+    name_prefix: "sac_graystack_5_500k"
+    save_replay_buffer: false
+    save_vecnormalize: true
+  tensorboard_config:
+    log_tensorboard: true
+    tensorboard_base_dir: "./tensorboard/"
+  learning_config:
+    total_timesteps: 500000
+    log_interval: 4

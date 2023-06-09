@@ -1,64 +1,28 @@
 # Algorithm imports
 from stable_baselines3 import SAC
 
-# Environment imports
-import browser_gym_env
-from stable_baselines3.common.vec_env import VecFrameStack, SubprocVecEnv
-from stable_baselines3.common.env_util import make_vec_env
+def create_model(cfg, env):
+    
+    # Prepare model
+    model = SAC(
+        "CnnPolicy", 
+        env,
+        verbose=1, 
+        device=cfg.algorithm_config.device, 
+        seed=cfg.algorithm_config.seed,
+        tensorboard_log=cfg.algorithm_config.tensorboard_config.tensorboard_base_dir,
+        buffer_size=cfg.algorithm_config.max_buffer_size,
+    )
 
-# Callback imports
-from stable_baselines3.common.callbacks import CheckpointCallback
+    # Load checkpoints
+    checkpoint_load_path = cfg.algorithm_config.checkpoint_load_path
+    if checkpoint_load_path:
+        model = SAC.load(checkpoint_load_path, env=env, device=cfg.algorithm_config.device)
 
-# Experiment parameters
-EXPERIMENT_NAME = "sac_graystack_5_500k"
-MODEL_SAVE_PATH = "./models/"
-N_ENVS = 10
-MAX_BUFFER_SIZE = 100000
-USE_CHECKPOINTS = None
-USE_REPLAY_BUFFER = None
+    # Load replay buffer
+    replay_buffer_load_path = cfg.algorithm_config.replay_buffer_load_path
+    if replay_buffer_load_path:
+        model.load_replay_buffer(replay_buffer_load_path)
 
-# Prepare environment
-env = make_vec_env(
-    "browser_gym_env/WebBrowserEnv-v0", 
-    n_envs=N_ENVS, 
-    vec_env_cls=SubprocVecEnv, 
-    env_kwargs={"masking": False, "log_steps": False, "grayscale":True},
-    vec_env_kwargs=dict(start_method='fork')
-)
 
-env = VecFrameStack(env, n_stack=5)
-
-# Prepare model
-model = SAC(
-    "CnnPolicy", 
-    env,
-    verbose=1, 
-    device="mps", 
-    seed=42,
-    tensorboard_log="./tensorboard/",
-    buffer_size=MAX_BUFFER_SIZE,
-)
-
-# Load checkpoints
-if USE_CHECKPOINTS:
-    model = SAC.load(USE_CHECKPOINTS, env=env, device="mps")
-
-# Load replay buffer
-if USE_REPLAY_BUFFER:
-    model.load_replay_buffer(USE_REPLAY_BUFFER)
-
-# Train the model and save checkpoints
-checkpoint_callback = CheckpointCallback(
-  save_freq=10000,
-  save_path=MODEL_SAVE_PATH,
-  name_prefix=EXPERIMENT_NAME,
-  save_replay_buffer=False,
-  save_vecnormalize=True,
-)
-
-model.learn(
-    total_timesteps=500000, 
-    log_interval=4, 
-    tb_log_name=EXPERIMENT_NAME, 
-    callback=checkpoint_callback
-)
+    return model
