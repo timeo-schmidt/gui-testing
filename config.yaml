@@ -3,7 +3,7 @@ web_app_interface:
   chromedriver_path: "./web-app-interface/web_app_interface/chromedriver/chromedriver"
   browser_reset_interval: 901
   viewport_dimensions: [1080,720]
-  headless_mode: true
+  headless_mode: false
   detached_mode: false
   verbose_mode: false
   record_video: false
@@ -13,8 +13,8 @@ env_config:
   test_url: "http://localhost:3000/"
   name: "browser_gym_env/WebBrowserEnv-v0"
   n_envs: 1
-  frame_stack: 5
-  horizon_length: 20
+  frame_stack: 3
+  horizon_length: 3 #! change this
   downscale_size: [128,128]
   masking: false
   mask_centerpoint_only: false
@@ -43,3 +43,15 @@ algorithm_config:
   learning_config:
     total_timesteps: 500000
     log_interval: 4
+
+# Commands relevant for operating the test system after training
+inference:
+  model_type: "SAC"
+  deterministic: false
+  model_load_path: "./experiments/sac_graystack_3/run_2_better/sac_graystack_3_500k_2_500000_steps.zip"
+  n_episodes: 1
+  wait_seconds: 2
+  log_errors: true
+  record_video: true
+  artefact_base_path: "./testing_artefacts/"
+  test_name: "auto"

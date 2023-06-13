@@ -11,6 +11,8 @@ from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.actions.action_builder import ActionBuilder
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+
 
 import numpy as np
 import cv2
@@ -81,7 +83,9 @@ class WebAppInterface(AbstractAppInterface):
             return ChromeDriverManager().install()
 
     def _initialize_selenium_driver(self, chrome_driver_path, options):
-        self.browser = webdriver.Chrome(chrome_driver_path, options=options)
+        d = DesiredCapabilities.CHROME
+        d['goog:loggingPrefs'] = { 'browser':'ALL' }
+        self.browser = webdriver.Chrome(chrome_driver_path, options=options, desired_capabilities=d)
         self.browser.get(self.starting_url)
 
     def _post_initialisation_tasks(self, cfg):
@@ -199,7 +203,6 @@ class WebAppInterface(AbstractAppInterface):
     """
     This function returns the current state of the browser window, which is a list of all the WebElements
     """
-    # TODO This may become obsolete when adding over the reward calculation helpers.
     def get_all_elements(self):
         # Get all the elements on the page
         return self.browser.find_elements(By.XPATH, "//*")
@@ -260,6 +263,19 @@ class WebAppInterface(AbstractAppInterface):
     """
     def get_action_history(self):
         return self.action_history
+
+    """
+    # Thread that listens for JavaScript errors in the web application and appends them to self.error_log
+    # """
+    def write_log_file(self):
+        # Create the log file
+        log_path = os.path.join(self.artefact_path, "log.txt")
+        if not os.path.exists(os.path.dirname(log_path)):
+            os.makedirs(os.path.dirname(log_path))
+        # Write the log file
+        for entry in self.browser.get_log('browser'):
+            with open(log_path, "a") as f:
+                f.write(str(entry) + "\n")
 
     """
     This helper function returns the time since the start of the recording
@@ -330,6 +346,3 @@ class WebAppInterface(AbstractAppInterface):
 
         video_writer.release()
         self._print("Screen recording saved")
-
-
-# TODO Implement a JS Exception Logger. This will be called by the inference loop.

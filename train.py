@@ -11,7 +11,7 @@ from sb3.argparser import load_config_file
 import browser_gym_env
 
 # Existing algorithm implementations
-existing_implementations = ["SAC", "PPO", "A2C"]
+existing_implementations = ["SAC"]
 
 cfg = load_config_file()
 

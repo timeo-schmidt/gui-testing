@@ -50,9 +50,12 @@ class WebBrowserEnv(gym.Env):
         self._init_browser()
 
         # Video recording settings
-        self.record_video = cfg.web_app_interface.record_video
+        self.record_video = cfg.web_app_interface.record_video or cfg.inference.record_video
         if self.record_video:
             self.web_app_interface.start_recording()
+
+        # Test system browser console logging flag
+        self.log_errors = cfg.inference.log_errors
 
         # Interface properties
         self.inner_window_size = self.web_app_interface.browser.execute_script("return { width: window.innerWidth, height: window.innerHeight }")
@@ -319,7 +322,7 @@ class WebBrowserEnv(gym.Env):
 
         return xpaths
 
-    """ # TODO Put the reward logic into an external function, so that it can easily be replaced here by the different options.
+    """
     The reward function for the environment.
     """
     def _calculate_reward(self, actions, is_deadend=False):
@@ -344,6 +347,45 @@ class WebBrowserEnv(gym.Env):
         return reward
     
     """
+    Reward function that calculates reward based on the visual difference between the previous and current observation.
+    """
+    def _calculate_visual_reward(self, prev_obs, obs):       
+        # Calculate the difference between the frames
+        diff = np.abs(prev_obs["screenshot"] - obs["screenshot"])
+        
+        # Calculate the sum of the difference
+        diff_sum = np.sum(diff)
+
+        # Calculate the reward
+        reward = np.log(diff_sum+1.0)
+
+        return reward
+    
+    """
+    Reward function that calculates the reward based on the delta of the number of visible elements.
+    """
+    def _calculate_element_delta_reward(self):
+
+        # Get the current visible xpaths
+        current_elements = set(self._get_visible_paths())
+
+        if self.prev_elements is None:
+            # If this is the first time step, then set the known xpaths to the current visible xpaths
+            self.prev_elements = current_elements
+            return 0
+        else:
+            # Get the delta of visible elements
+            delta = len(current_elements - self.prev_elements)
+
+            # Update the previous elements
+            self.prev_elements = current_elements
+
+            # Calculate the reward
+            reward = np.log(delta+1.0)
+            
+            return reward
+    
+    """
     Check that the observation is not just a white image or an image with no clickable elements.
     """
     def _check_obs_valid(self, obs):
@@ -352,11 +394,15 @@ class WebBrowserEnv(gym.Env):
         else:
             return not np.all(obs == 255)
        
-
+ 
     """
     One time step in the environment.
     """
     def step(self, action):
+        try:
+            self.web_app_interface.browser.execute_script('throw Error("This is a test error");')
+        except:
+            pass
 
         # Convert the action space representation to pixel click locations
         x = int((action[0]*0.5+0.5)*self.viewport_size[0])
@@ -384,7 +430,15 @@ class WebBrowserEnv(gym.Env):
         # An episode is done if the max episode step count is reached or the page is a deadend
         terminated = self.episode_step_count >= self.max_episode or is_deadend
 
-        # Compute the reward
+        # Reward Calculation Option 1
+        # if self.prev_obs is not None:
+        #     reward = self._calculate_visual_reward(self.prev_obs, observation)
+        # else:
+        #     reward = 0
+        
+        # Reward Calculation Option 2
+
+        # Reward Calculation Option 3
         reward = self._calculate_reward([x,y], is_deadend)
 
         if not terminated:
@@ -436,10 +490,6 @@ class WebBrowserEnv(gym.Env):
         if(self.browser_open_steps >= self.browser_reset_interval):
             self._init_browser()
 
-        # Include a delay if a video is being recorded
-        if self.record_video:
-            time.sleep(2)
-
         return observation, reward, terminated, truncated, info
 
     """
@@ -454,4 +504,6 @@ class WebBrowserEnv(gym.Env):
     def close(self):
         if self.record_video:
             self.web_app_interface.stop_recording()
+        if self.log_errors:
+            self.web_app_interface.write_log_file()
         self.web_app_interface.browser.quit()
