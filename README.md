@@ -1,4 +1,5 @@
-# This should ideally be a Dockerfile
+# Installation Instructions
+
 
 git clone git@github.com:timeo-schmidt/gui-testing.git
 git clone git@github.com:cypress-io/cypress-realworld-app.git

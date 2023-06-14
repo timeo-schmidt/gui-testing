@@ -7,3 +7,9 @@ key.txt
 *chromedriver/
 experiments/
 *.pyc
+other_studies
+notes/
+apps/
+server_setup.sh
+experiment_plan.txt
+testing_artefacts/

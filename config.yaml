@@ -14,7 +14,7 @@ env_config:
   name: "browser_gym_env/WebBrowserEnv-v0"
   n_envs: 1
   frame_stack: 3
-  horizon_length: 3 #! change this
+  horizon_length: 20
   downscale_size: [128,128]
   masking: false
   mask_centerpoint_only: false
