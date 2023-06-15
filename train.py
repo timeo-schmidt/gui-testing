@@ -5,7 +5,7 @@ import os
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecFrameStack, SubprocVecEnv
-from sb3.argparser import load_config_file
+from utils.argparser import load_config_file
 
 # Local/application specific modules
 import browser_gym_env
@@ -14,6 +14,7 @@ import browser_gym_env
 existing_implementations = ["SAC"]
 
 cfg = load_config_file()
+cfg.mode = "train"
 
 print(cfg)
 
@@ -32,13 +33,16 @@ cfg.artefact_path = os.path.join(cfg.algorithm_config.artefact_base_path, cfg.al
 if not os.path.exists(cfg.artefact_path):
     os.makedirs(cfg.artefact_path)
 
+# Copy the config.yaml file to the artefact directory
+os.system(f"cp config.yaml {cfg.artefact_path}/config.snapshot")
+
 algo = cfg.algorithm_config.algorithm_type
 
 # Check that the active algorithm type has been implemented
 assert(algo in existing_implementations)
 
 if algo == "SAC":
-    from sb3.SAC.train_sac import create_model
+    from algos.SAC.train_sac import create_model
 
 # Prepare environment
 env = make_vec_env(

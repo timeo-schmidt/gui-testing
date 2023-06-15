@@ -3,7 +3,7 @@ web_app_interface:
   chromedriver_path: "./web-app-interface/web_app_interface/chromedriver/chromedriver"
   browser_reset_interval: 901
   viewport_dimensions: [1080,720]
-  headless_mode: false
+  headless_mode: true
   detached_mode: false
   verbose_mode: false
   record_video: false
@@ -26,20 +26,19 @@ env_config:
 algorithm_config:
   algorithm_type: "SAC"
   seed: 42
-  experiment_name: "auto"
+  experiment_name: "auto_stackexp"
   device: "mps"
   max_buffer_size: 100000
   replay_buffer_load_path: ""
   checkpoint_load_path: ""
   artefact_base_path: "./experiments/"
   checkpoint_config:
-    save_freq: 10000
-    name_prefix: "sac_graystack_5_500k"
+    save_freq: 5000
     save_replay_buffer: false
-    save_vecnormalize: true
+    save_vecnormalize: false
   tensorboard_config:
-    log_tensorboard: true
-    tensorboard_base_dir: "./tensorboard/"
+    log_tensorboard: false
+    tensorboard_base_dir:  #"./tensorboard/"
   learning_config:
     total_timesteps: 500000
     log_interval: 4
@@ -50,8 +49,12 @@ inference:
   deterministic: false
   model_load_path: "./experiments/sac_graystack_3/run_2_better/sac_graystack_3_500k_2_500000_steps.zip"
   n_episodes: 1
-  wait_seconds: 2
-  log_errors: true
-  record_video: true
+  wait_seconds: 0.5
+  log_errors: false
+  record_video: false
   artefact_base_path: "./testing_artefacts/"
   test_name: "auto"
+
+baseline:
+  type: "tabularQ"
+  n_episodes: 10

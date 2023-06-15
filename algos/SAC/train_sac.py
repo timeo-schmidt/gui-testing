@@ -2,10 +2,10 @@
 from stable_baselines3 import SAC
 
 def create_model(cfg, env):
-    
+
     # Prepare model
     model = SAC(
-        "CnnPolicy", 
+        "MlpPolicy", 
         env,
         verbose=1, 
         device=cfg.algorithm_config.device, 

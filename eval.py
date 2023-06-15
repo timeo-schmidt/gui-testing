@@ -13,7 +13,7 @@ import browser_gym_env
 existing_implementations = ["SAC"]
 
 cfg = load_config_file()
-cfg.mode = "test"
+cfg.mode = "eval"
 
 test_name = str(time.time()) if cfg.inference.test_name=="auto" else cfg.inference.test_name
 
@@ -68,5 +68,7 @@ for i in range(cfg.inference.n_episodes):
         time.sleep(sleep_duration)
 
 env.close()
+
+print(test_reward)
 
 # TODO: Fix video recording bug (onpaint size and wrong location)

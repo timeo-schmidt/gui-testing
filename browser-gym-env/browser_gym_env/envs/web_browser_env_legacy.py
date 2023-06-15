@@ -6,8 +6,8 @@ import time
 
 # Third-party libraries
 from PIL import Image, ImageDraw
-import gymnasium as gym
-from gymnasium import spaces
+import gym
+from gym import spaces
 import numpy as np
 import torch as th
 
@@ -19,10 +19,6 @@ class WebBrowserEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"]}
 
     def __init__(self, cfg, render_mode=None):
-        # Ray-specific configuration
-        if cfg.__class__.__name__ == "EnvContext":
-            cfg = cfg["cfg"]
-
         # Configuration and settings
         self.cfg = cfg
         self.render_mode = render_mode
@@ -54,7 +50,7 @@ class WebBrowserEnv(gym.Env):
         self._init_browser()
 
         # Video recording settings
-        self.record_video = cfg.web_app_interface.record_video or (cfg.inference.record_video and cfg.mode=="test")
+        self.record_video = cfg.web_app_interface.record_video or cfg.inference.record_video
         if self.record_video:
             self.web_app_interface.start_recording()
 
@@ -97,7 +93,6 @@ class WebBrowserEnv(gym.Env):
     This function gets a dict with the topLeft and bottomRight coordinates of the interactable elements in the current page.
     """
     def get_interactable_regions_dict(self):
-        print("Getting interactable regions dict (masking)")
         expression = """
         function getElementsPositions() {
             var allElements = document.querySelectorAll('*');
@@ -155,81 +150,7 @@ class WebBrowserEnv(gym.Env):
         interactable_elements = self.web_app_interface.browser.execute_script("return interactable_elements;")
 
         return interactable_elements
-    
-    def get_interactable_and_visible_xpaths(self):
-        print("Getting interactable and visible xpaths...")
-        expression = """
-        (function() {
-            function getXPathForElement(element) {
-                const idx = (sib, name) => sib
-                    ? idx(sib.previousElementSibling, name || sib.localName) + (sib.localName == name)
-                    : 1;
-                const segs = elm => !elm || elm.nodeType !== 1 
-                    ? ['']
-                    : elm.id && document.getElementById(elm.id) === elm
-                        ? [`//*[@id="${elm.id}"]`]
-                        : [...segs(elm.parentNode), `${elm.localName.toLowerCase()}`];
-                let path = segs(element);
-                path[path.length - 1] = `${path[path.length - 1]}[${idx(element)}]`;
-                return path.join('/');
-            }
-            function isVisible(element) {
-                const style = window.getComputedStyle(element);
-                const rect = element.getBoundingClientRect();
-
-                return style.display !== 'none' &&
-                    style.visibility !== 'hidden' &&
-                    parseFloat(style.opacity) > 0 &&
-                    rect.width > 0 && rect.height > 0 &&
-                    rect.top >= 0 && rect.left >= 0 &&
-                    (rect.bottom + window.scrollY) <= (window.innerHeight + window.scrollY) &&
-                    (rect.right + window.scrollX) <= (window.innerWidth + window.scrollX);
-            }
-
-            function isInteractable(element) {
-                var interactableSelectors = ['a', 'button', 'input[type=button]', 'input[type=submit]'];
-                var hasListeners = getEventListeners(element).click && getEventListeners(element).click.length > 0;
-                var matchesSelector = interactableSelectors.some(selector => element.matches(selector));
-                return hasListeners || matchesSelector;
-            }
-
-            function getVisibleAndInteractable() {
-                const elements = document.querySelectorAll('*');
-                const visibleInteractableElementsXPaths = [];
-                for (let element of elements) {
-                    if (isVisible(element) && isInteractable(element)) {
-                        var xpath = getXPathForElement(element);
-                        if ($x(xpath).length >= 1) {
-                            visibleInteractableElementsXPaths.push(xpath);
-                        }
-                    }
-                }
-                return visibleInteractableElementsXPaths;
-            }
         
-            return getVisibleAndInteractable();
-        })()
-        """
-
-        args = {
-            "allowUnsafeEvalBlockedByCSP": False,
-            "awaitPromise": False,
-            "expression": expression,
-            "generatePreview": False,
-            "includeCommandLineAPI": True,
-            "objectGroup": "console",
-            "replMode": True,
-            "returnByValue": True,
-            "silent": False,
-            "userGesture": True
-        }
-
-        result = self.web_app_interface.browser.execute_cdp_cmd("Runtime.evaluate", args)
-
-        # Result from Javascript execution is in 'result' variable, under the 'result' key and then under the 'value' key
-        interactable_elements = result['result']['value']
-
-        return interactable_elements
 
     """
     This function retrieves an (image) mask with all the interactable elements in the current page.
@@ -297,6 +218,8 @@ class WebBrowserEnv(gym.Env):
             screenshot = np.dot(screenshot[...,:3], [0.2989, 0.5870, 0.1140])
             screenshot = screenshot.astype(np.uint8)
             screenshot = np.expand_dims(screenshot, axis=-1)
+        
+        mask = self.get_interactable_element_mask()
 
         ############### DEBUG ###############
         # Get the screenshot and mask of the previous observation
@@ -317,7 +240,6 @@ class WebBrowserEnv(gym.Env):
         ############### END DEBUG ###############
 
         if self.masking:
-            mask = self.get_interactable_element_mask()
             obs = { 
                 "screenshot": screenshot,
                 "clickable_elements": mask

@@ -56,6 +56,7 @@ class WebAppInterface(AbstractAppInterface):
 
 
     def _set_config_params(self, cfg):
+        self.cfg = cfg
         self.viewport_size = cfg.web_app_interface.viewport_dimensions
         self.artefact_path = cfg.artefact_path
         self.starting_url = cfg.env_config.test_url
@@ -83,9 +84,12 @@ class WebAppInterface(AbstractAppInterface):
             return ChromeDriverManager().install()
 
     def _initialize_selenium_driver(self, chrome_driver_path, options):
-        d = DesiredCapabilities.CHROME
-        d['goog:loggingPrefs'] = { 'browser':'ALL' }
-        self.browser = webdriver.Chrome(chrome_driver_path, options=options, desired_capabilities=d)
+        if self.cfg.mode == "test":
+            d = DesiredCapabilities.CHROME
+            d['goog:loggingPrefs'] = { 'browser':'ALL' }
+            self.browser = webdriver.Chrome(chrome_driver_path, options=options, desired_capabilities=d)
+        else:
+            self.browser = webdriver.Chrome(chrome_driver_path, options=options)
         self.browser.get(self.starting_url)
 
     def _post_initialisation_tasks(self, cfg):
@@ -206,6 +210,13 @@ class WebAppInterface(AbstractAppInterface):
     def get_all_elements(self):
         # Get all the elements on the page
         return self.browser.find_elements(By.XPATH, "//*")
+    
+    """
+    Get element center coordinate from xpath
+    """
+    def get_element_center(self, xpath):
+        element = self.browser.find_element(By.XPATH, xpath).rect
+        return element["x"] + element["width"]/2, element["y"] + element["height"]/2
 
     """
     This function recovers from any known deadend states by first checking for a deadend and then manually injecting the actions to recover from the deadend.
@@ -268,6 +279,8 @@ class WebAppInterface(AbstractAppInterface):
     # Thread that listens for JavaScript errors in the web application and appends them to self.error_log
     # """
     def write_log_file(self):
+        if self.cfg != "test":
+            return
         # Create the log file
         log_path = os.path.join(self.artefact_path, "log.txt")
         if not os.path.exists(os.path.dirname(log_path)):
