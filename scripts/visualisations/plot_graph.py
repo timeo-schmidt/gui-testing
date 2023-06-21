@@ -1,10 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+# from mpl_toolkits.mplot3d import Axes3D
 import cv2
 from scipy.stats import multivariate_normal
 
-from matplotlib.tri import Triangulation
+# from matplotlib.tri import Triangulation
+
+from matplotlib import rc
+rc('font', **{'family': 'serif', 'serif': ['Times New Roman']})
 
 # Create a list of images, mus and sigmas
 images = ['screen.png', 'screen.png', 'screen.png']  # Replace with your actual images

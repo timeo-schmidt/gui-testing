@@ -69,7 +69,9 @@ class WebBrowserEnv(gym.Env):
 
         # Debugging properties
         self.env_id = ''.join(random.choice(string.ascii_lowercase) for i in range(5))
+        
         self.prev_obs = None
+        self.prev_elements = None
 
     def _define_observation_space(self, n_img_channels):
         if self.masking:
@@ -325,6 +327,7 @@ class WebBrowserEnv(gym.Env):
         else:
             obs = screenshot
 
+        self.prev_obs = obs
         return obs
 
     """
@@ -403,7 +406,7 @@ class WebBrowserEnv(gym.Env):
     """
     The reward function for the environment.
     """
-    def _calculate_reward(self, actions, is_deadend=False):
+    def _calculate_reward_legacy(self, is_deadend=False):
 
         all_visible_xpaths = set(self._get_visible_paths())
 
@@ -425,17 +428,31 @@ class WebBrowserEnv(gym.Env):
         return reward
     
     """
+    The reward function for the environment.
+    """
+    def _calculate_reward_previously_unseen(self):
+
+        all_visible_xpaths = set(self._get_visible_paths())
+
+        # Get the new xpaths that have not been seen previously in self.known_xpaths
+        new_xpaths = all_visible_xpaths - self.known_xpaths
+
+        # Add the new xpaths to the known xpaths
+        self.known_xpaths = self.known_xpaths.union(new_xpaths)
+
+        reward = len(new_xpaths)
+        
+        return reward
+    
+    """
     Reward function that calculates reward based on the visual difference between the previous and current observation.
     """
-    def _calculate_visual_reward(self, prev_obs, obs):       
+    def _calculate_visual_reward(self, prev_obs, obs):
         # Calculate the difference between the frames
-        diff = np.abs(prev_obs["screenshot"] - obs["screenshot"])
+        diff = np.abs(prev_obs - obs)
         
         # Calculate the sum of the difference
-        diff_sum = np.sum(diff)
-
-        # Calculate the reward
-        reward = np.log(diff_sum+1.0)
+        reward = np.sum(diff)
 
         return reward
     
@@ -458,10 +475,26 @@ class WebBrowserEnv(gym.Env):
             # Update the previous elements
             self.prev_elements = current_elements
 
-            # Calculate the reward
-            reward = np.log(delta+1.0)
-            
-            return reward
+            return delta
+        
+    def apply_reward_addons(self, reward, truncated):
+        # Termination penalty
+        if truncated:
+            return -10 # Return a large negative reward
+
+        # Logarithmic scaling
+        if self.cfg.env_config.reward_addon_logarithmic_scaling:
+            reward = np.log(reward+1.0)
+
+        # Scale Factor
+        reward *= self.cfg.env_config.reward_addon_scale_factor
+
+        # Negative default
+        if self.cfg.env_config.reward_addon_negative_default:
+            if reward == 0:
+                reward = self.cfg.env_config.reward_addon_negative_default
+
+        return reward
     
     """
     Check that the observation is not just a white image or an image with no clickable elements.
@@ -490,6 +523,7 @@ class WebBrowserEnv(gym.Env):
         self.web_app_interface.click(x, y)
 
         # Calcualte a new observation and info
+        prev_obs = self.prev_obs
         observation = self._get_obs()
         info = self._get_info()
 
@@ -508,16 +542,21 @@ class WebBrowserEnv(gym.Env):
         # An episode is done if the max episode step count is reached or the page is a deadend
         terminated = self.episode_step_count >= self.max_episode or is_deadend
 
-        # Reward Calculation Option 1
-        # if self.prev_obs is not None:
-        #     reward = self._calculate_visual_reward(self.prev_obs, observation)
-        # else:
-        #     reward = 0
-        
-        # Reward Calculation Option 2
 
-        # Reward Calculation Option 3
-        reward = self._calculate_reward([x,y], is_deadend)
+        # Calculate the reward
+        reward_variant = self.cfg.env_config.reward_variant
+        if reward_variant == 1:
+            # Variant 1: Reward based on visual difference (pixel difference)
+            reward = self._calculate_visual_reward(prev_obs, observation)
+        elif reward_variant == 2:
+            # Variant 2: Reward based on the delta of the number of visible elements
+            reward = self._calculate_element_delta_reward()
+        elif reward_variant == 3:
+            # Variant 3: Reward based on the number of new, previously unseen elements
+            reward = self._calculate_reward_previously_unseen()
+
+        # Apply addons to the reward
+        reward = self.apply_reward_addons(reward, is_deadend)
 
         if not terminated:
             self.episode_step_count += 1
@@ -556,8 +595,6 @@ class WebBrowserEnv(gym.Env):
 
             # Save the image with the env id as name
             screenshot_img.save(f"env_{self.env_id}.png")
-
-        self.prev_obs = observation
 
         if self.log_steps:
             # Print episode, action, reward all fixed length

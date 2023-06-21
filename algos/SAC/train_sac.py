@@ -5,7 +5,7 @@ def create_model(cfg, env):
 
     # Prepare model
     model = SAC(
-        "MlpPolicy", 
+        cfg.algorithm_config.policy_type, 
         env,
         verbose=1, 
         device=cfg.algorithm_config.device, 
@@ -17,6 +17,7 @@ def create_model(cfg, env):
     # Load checkpoints
     checkpoint_load_path = cfg.algorithm_config.checkpoint_load_path
     if checkpoint_load_path:
+        print("Loading checkpoint from: ", checkpoint_load_path)
         model = SAC.load(checkpoint_load_path, env=env, device=cfg.algorithm_config.device)
 
     # Load replay buffer

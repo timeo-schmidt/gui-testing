@@ -1,5 +1,6 @@
 # Built-in modules
 import os
+import argparse
 
 # Third-party libraries
 from stable_baselines3.common.callbacks import CheckpointCallback
@@ -13,7 +14,18 @@ import browser_gym_env
 # Existing algorithm implementations
 existing_implementations = ["SAC"]
 
-cfg = load_config_file()
+DEFAULT_FILE = "config.yaml"
+
+# Parse command line arguments for config file
+argParser = argparse.ArgumentParser()
+argParser.add_argument("-c", "--config", help="configfile to use", default=DEFAULT_FILE)
+
+args = argParser.parse_args()
+
+config_filepath = args.config
+
+
+cfg = load_config_file(filepath=config_filepath)
 cfg.mode = "train"
 
 print(cfg)
@@ -34,7 +46,7 @@ if not os.path.exists(cfg.artefact_path):
     os.makedirs(cfg.artefact_path)
 
 # Copy the config.yaml file to the artefact directory
-os.system(f"cp config.yaml {cfg.artefact_path}/config.snapshot")
+os.system(f"cp {config_filepath} {cfg.artefact_path}/config.snapshot")
 
 algo = cfg.algorithm_config.algorithm_type
 

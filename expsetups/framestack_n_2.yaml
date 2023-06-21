@@ -2,7 +2,7 @@
 web_app_interface:
   chromedriver_path: "./web-app-interface/web_app_interface/chromedriver/chromedriver"
   browser_reset_interval: 901
-  viewport_dimensions: [1280,720]
+  viewport_dimensions: [1080,720]
   headless_mode: true
   detached_mode: false
   verbose_mode: false
@@ -12,8 +12,8 @@ web_app_interface:
 env_config:
   test_url: "http://localhost:3000/"
   name: "browser_gym_env/WebBrowserEnv-v0"
-  n_envs: 1
-  frame_stack: 5
+  n_envs: 10
+  frame_stack: 2
   horizon_length: 20
   downscale_size: [128,128]
   masking: false
@@ -22,15 +22,15 @@ env_config:
   log_steps: true
   grayscale: true
   reward_variant: 3                           # 1: visual difference, 2: element delta, 3: new unseen elements
-  reward_addon_logarithmic_scaling: false      # Applies logarithmic scaling to smoothen out the reward  
-  reward_addon_scale_factor: 1               # Applies a scale factor to the obtained reward
-  reward_addon_negative_default: 0        # Replaces zero rewards by specified negative number to penalise useless actions
+  reward_addon_logarithmic_scaling: true      # Applies logarithmic scaling to smoothen out the reward  
+  reward_addon_scale_factor: 10               # Applies a scale factor to the obtained reward
+  reward_addon_negative_default: -0.01        # Replaces zero rewards by specified negative number to penalise useless actions
 
 # All the settings relating to the RL algorithm and training
 algorithm_config:
   algorithm_type: "SAC"
   seed: 42
-  experiment_name: "shopware6_auto"
+  experiment_name: "orch3_framestack_n_2_auto"
   device: "mps"
   max_buffer_size: 100000
   policy_type: "CnnPolicy"
@@ -45,14 +45,14 @@ algorithm_config:
     log_tensorboard: false
     tensorboard_base_dir:  "./tensorboard/"
   learning_config:
-    total_timesteps: 500000
+    total_timesteps: 100000
     log_interval: 4
 
 # Commands relevant for operating the test system after training
 inference:
   model_type: "SAC"
   deterministic: false
-  model_load_path: "./models/sac_graystack_5_500k_500000_steps.zip"
+  model_load_path: "./experiments/sac_graystack_3/run_2_better/sac_graystack_3_500k_2_500000_steps.zip"
   n_episodes: 1
   wait_seconds: 0.5
   log_errors: false
@@ -61,5 +61,5 @@ inference:
   test_name: "auto"
 
 baseline:
-  type: "human"
-  n_episodes: 1
+  type: "tabularQ"
+  n_episodes: 10

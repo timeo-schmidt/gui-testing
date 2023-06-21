@@ -13,3 +13,6 @@ apps/
 server_setup.sh
 experiment_plan.txt
 testing_artefacts/
+data/
+
+*.pdf
