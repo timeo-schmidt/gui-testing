@@ -1,3 +1,12 @@
+# Automated Web Application Testing using Deep Reinforcement Learning
+
+MEng thesis, Imperial College London, 2023.
+
+- A Soft Actor-Critic agent learns to test a web application from screenshots alone.
+- It runs in a custom Gymnasium environment around the Cypress Real World App.
+- Result: 91% better than a Q-learning baseline and 67% better than novice human testers.
+
+  
 # Installation Instructions
 
 
